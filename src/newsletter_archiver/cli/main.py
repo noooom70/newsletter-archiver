@@ -4,6 +4,7 @@ import typer
 
 from newsletter_archiver.cli.commands.config import app as config_app
 from newsletter_archiver.cli.commands.fetch import app as fetch_app
+from newsletter_archiver.cli.commands.senders import app as senders_app
 
 app = typer.Typer(
     name="newsletter-archiver",
@@ -11,7 +12,8 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
-app.add_typer(config_app, name="config", help="Manage configuration and Azure AD setup.")
+app.add_typer(config_app, name="config", help="Manage configuration.")
+app.add_typer(senders_app, name="senders", help="Manage newsletter senders (approve, deny, list).")
 app.command(name="fetch")(fetch_app)
 
 

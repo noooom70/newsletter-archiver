@@ -26,13 +26,17 @@ from newsletter_archiver.storage.file_manager import (
 def app(
     days_back: int = typer.Option(7, "--days-back", "-d", help="Number of days back to fetch"),
     sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender email or domain"),
-    all_mail: bool = typer.Option(False, "--all", help="Fetch all emails, not just detected newsletters"),
+    scan: bool = typer.Option(False, "--scan", help="Scan for new newsletter senders without archiving"),
 ):
-    """Fetch newsletters from Outlook and archive them."""
+    """Fetch newsletters from Outlook and archive them.
+
+    By default, only archives emails from approved senders.
+    Use --scan to discover new newsletter senders for review.
+    """
     settings = get_settings()
 
     if not settings.is_configured:
-        rprint("[red]Error:[/red] Azure AD not configured. Run: [cyan]newsletter-archiver config setup[/cyan]")
+        rprint("[red]Error:[/red] Not configured. Run: [cyan]newsletter-archiver config setup[/cyan]")
         raise typer.Exit(1)
 
     settings.ensure_dirs()
@@ -72,23 +76,91 @@ def app(
 
     rprint(f"Found [bold]{len(messages)}[/bold] emails. Processing...")
 
-    # Process each email
-    saved = 0
-    skipped = 0
-    not_newsletter = 0
+    approved_senders = db.get_approved_sender_emails()
+
+    if scan:
+        _scan_for_senders(messages, db, approved_senders)
+    else:
+        _archive_approved(messages, db, approved_senders)
+
+
+def _scan_for_senders(messages: list, db: DatabaseManager, approved_senders: set[str]):
+    """Scan emails for newsletter senders and add as pending for review."""
+    new_senders = 0
+    known = 0
 
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
     ) as progress:
-        task = progress.add_task("Processing emails...", total=len(messages))
+        task = progress.add_task("Scanning for newsletters...", total=len(messages))
 
         for message in messages:
             parsed = parse_message(message)
 
-            # Skip if not a newsletter (unless --all)
-            if not all_mail and not parsed.is_newsletter:
-                not_newsletter += 1
+            if not parsed.is_newsletter:
+                progress.advance(task)
+                continue
+
+            existing = db.get_sender(parsed.sender_email)
+            if existing:
+                known += 1
+            else:
+                db.upsert_sender(
+                    email=parsed.sender_email,
+                    name=parsed.sender_name,
+                    status="pending",
+                    sample_subject=parsed.subject,
+                )
+                new_senders += 1
+
+            progress.advance(task)
+
+    rprint()
+    rprint(f"[green]✓[/green] Scan complete!")
+    if new_senders:
+        rprint(f"  New senders found: [bold yellow]{new_senders}[/bold yellow]")
+        rprint(f"  Run [cyan]newsletter-archiver senders review[/cyan] to approve or deny them.")
+    else:
+        rprint(f"  No new newsletter senders found.")
+    if known:
+        rprint(f"  Already known: {known}")
+
+
+def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set[str]):
+    """Archive emails from approved senders only."""
+    if not approved_senders:
+        rprint("[yellow]No approved senders yet.[/yellow]")
+        rprint("Run [cyan]newsletter-archiver fetch --scan[/cyan] to discover newsletter senders,")
+        rprint("then [cyan]newsletter-archiver senders review[/cyan] to approve them.")
+        raise typer.Exit(0)
+
+    saved = 0
+    skipped = 0
+    not_approved = 0
+    new_pending = 0
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+    ) as progress:
+        task = progress.add_task("Archiving newsletters...", total=len(messages))
+
+        for message in messages:
+            parsed = parse_message(message)
+
+            # Only archive from approved senders
+            if parsed.sender_email not in approved_senders:
+                # If it looks like a newsletter from an unknown sender, add as pending
+                if parsed.is_newsletter and not db.get_sender(parsed.sender_email):
+                    db.upsert_sender(
+                        email=parsed.sender_email,
+                        name=parsed.sender_name,
+                        status="pending",
+                        sample_subject=parsed.subject,
+                    )
+                    new_pending += 1
+                not_approved += 1
                 progress.advance(task)
                 continue
 
@@ -137,12 +209,6 @@ def app(
                 reading_time_minutes=reading_time,
             )
 
-            # Track sender
-            db.upsert_sender(
-                email=parsed.sender_email,
-                name=parsed.sender_name,
-            )
-
             saved += 1
             progress.advance(task)
 
@@ -151,7 +217,10 @@ def app(
     rprint(f"[green]✓[/green] Done!")
     rprint(f"  Saved: [bold green]{saved}[/bold green] newsletters")
     if skipped:
-        rprint(f"  Skipped (already archived): [yellow]{skipped}[/yellow]")
-    if not_newsletter:
-        rprint(f"  Skipped (not newsletters): [dim]{not_newsletter}[/dim]")
+        rprint(f"  Already archived: [dim]{skipped}[/dim]")
+    if not_approved:
+        rprint(f"  Skipped (not approved): [dim]{not_approved}[/dim]")
+    if new_pending:
+        rprint(f"  New senders discovered: [yellow]{new_pending}[/yellow]")
+        rprint(f"  Run [cyan]newsletter-archiver senders review[/cyan] to approve them.")
     rprint(f"  Total archived: [bold]{db.get_newsletter_count()}[/bold]")

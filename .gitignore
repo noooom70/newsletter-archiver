@@ -19,8 +19,8 @@ venv/
 # Environment
 .env
 
-# O365 token cache
-o365_token.txt
+# MSAL token cache
+msal_token_cache.json
 
 # Archive data (user-specific)
 data/

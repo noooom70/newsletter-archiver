@@ -28,7 +28,6 @@ def test_get_sender_dirname():
 
 
 def test_get_archive_path(settings, monkeypatch):
-    # Patch get_settings to return our test settings
     import newsletter_archiver.storage.file_manager as fm
     monkeypatch.setattr(fm, "get_settings", lambda: settings)
 
@@ -87,9 +86,40 @@ def test_db_manager_sender_crud(settings):
     sender = db.upsert_sender(email="test@example.com", name="Test Sender")
     assert sender.email == "test@example.com"
     assert sender.name == "Test Sender"
+    assert sender.status == "pending"
     assert db.get_sender_count() == 1
 
     # Upsert again should not duplicate
     sender2 = db.upsert_sender(email="test@example.com")
     assert db.get_sender_count() == 1
-    assert sender2.name == "Test Sender"  # name preserved
+    assert sender2.name == "Test Sender"
+
+
+def test_db_manager_sender_approval_flow(settings):
+    settings.ensure_dirs()
+    db = DatabaseManager(db_url=f"sqlite:///{settings.db_path}")
+
+    # Add as pending
+    db.upsert_sender(email="news@substack.com", name="Substack", sample_subject="Weekly Digest")
+    assert len(db.get_senders_by_status("pending")) == 1
+    assert len(db.get_approved_sender_emails()) == 0
+
+    # Approve
+    db.set_sender_status("news@substack.com", "approved")
+    assert len(db.get_senders_by_status("pending")) == 0
+    assert "news@substack.com" in db.get_approved_sender_emails()
+
+    # Deny another
+    db.upsert_sender(email="spam@example.com", name="Spam")
+    db.set_sender_status("spam@example.com", "denied")
+    assert len(db.get_senders_by_status("denied")) == 1
+    assert "spam@example.com" not in db.get_approved_sender_emails()
+
+
+def test_db_manager_add_approved_directly(settings):
+    settings.ensure_dirs()
+    db = DatabaseManager(db_url=f"sqlite:///{settings.db_path}")
+
+    # Manual add goes straight to approved
+    db.upsert_sender(email="fav@newsletter.com", name="Favorite", status="approved")
+    assert "fav@newsletter.com" in db.get_approved_sender_emails()

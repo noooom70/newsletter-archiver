@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from newsletter_archiver.core.config import get_settings
 from newsletter_archiver.core.database import (
@@ -21,6 +21,8 @@ class DatabaseManager:
 
     def _session(self):
         return get_session(self.db_url)
+
+    # --- Newsletter operations ---
 
     def newsletter_exists(self, message_id: str) -> bool:
         """Check if a newsletter with this message_id is already stored."""
@@ -47,7 +49,7 @@ class DatabaseManager:
         tags: str = "",
         category: str = "",
     ) -> Newsletter:
-        """Insert a newsletter record. Returns the created Newsletter."""
+        """Insert a newsletter record."""
         session = self._session()
         try:
             newsletter = Newsletter(
@@ -73,7 +75,32 @@ class DatabaseManager:
         finally:
             session.close()
 
-    def upsert_sender(self, email: str, name: str = "") -> Sender:
+    def get_newsletter_count(self) -> int:
+        session = self._session()
+        try:
+            return session.execute(select(func.count(Newsletter.id))).scalar() or 0
+        finally:
+            session.close()
+
+    # --- Sender operations ---
+
+    def get_sender(self, email: str) -> Optional[Sender]:
+        """Get a sender by email, or None if not found."""
+        session = self._session()
+        try:
+            return session.execute(
+                select(Sender).where(Sender.email == email)
+            ).scalar_one_or_none()
+        finally:
+            session.close()
+
+    def upsert_sender(
+        self,
+        email: str,
+        name: str = "",
+        status: str = "pending",
+        sample_subject: str = "",
+    ) -> Sender:
         """Insert sender if not exists, otherwise return existing."""
         session = self._session()
         try:
@@ -82,14 +109,26 @@ class DatabaseManager:
             ).scalar_one_or_none()
 
             if sender is None:
-                sender = Sender(email=email, name=name)
+                sender = Sender(
+                    email=email,
+                    name=name,
+                    status=status,
+                    sample_subject=sample_subject,
+                )
                 session.add(sender)
                 session.commit()
                 session.refresh(sender)
-            elif name and not sender.name:
-                sender.name = name
-                session.commit()
-                session.refresh(sender)
+            else:
+                changed = False
+                if name and not sender.name:
+                    sender.name = name
+                    changed = True
+                if sample_subject and not sender.sample_subject:
+                    sender.sample_subject = sample_subject
+                    changed = True
+                if changed:
+                    session.commit()
+                    session.refresh(sender)
 
             return sender
         except Exception:
@@ -98,40 +137,62 @@ class DatabaseManager:
         finally:
             session.close()
 
-    def get_allowed_senders(self) -> list[str]:
-        """Get list of sender emails marked as newsletters with auto_fetch."""
+    def set_sender_status(self, email: str, status: str) -> Optional[Sender]:
+        """Update a sender's status (approved/denied/pending)."""
+        session = self._session()
+        try:
+            sender = session.execute(
+                select(Sender).where(Sender.email == email)
+            ).scalar_one_or_none()
+            if sender:
+                sender.status = status
+                session.commit()
+                session.refresh(sender)
+            return sender
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def get_senders_by_status(self, status: str) -> list[Sender]:
+        """Get all senders with a given status."""
         session = self._session()
         try:
             results = session.execute(
-                select(Sender.email).where(
-                    Sender.is_newsletter == True,  # noqa: E712
-                    Sender.auto_fetch == True,  # noqa: E712
-                )
+                select(Sender)
+                .where(Sender.status == status)
+                .order_by(Sender.first_seen.desc())
             ).scalars().all()
             return list(results)
         finally:
             session.close()
 
-    def get_newsletter_count(self) -> int:
-        """Get total number of archived newsletters."""
+    def get_approved_sender_emails(self) -> set[str]:
+        """Get set of approved sender emails for fast lookup."""
         session = self._session()
         try:
-            from sqlalchemy import func
-            result = session.execute(
-                select(func.count(Newsletter.id))
-            ).scalar()
-            return result or 0
+            results = session.execute(
+                select(Sender.email).where(Sender.status == "approved")
+            ).scalars().all()
+            return set(results)
+        finally:
+            session.close()
+
+    def get_all_senders(self) -> list[Sender]:
+        """Get all senders ordered by status then name."""
+        session = self._session()
+        try:
+            results = session.execute(
+                select(Sender).order_by(Sender.status, Sender.email)
+            ).scalars().all()
+            return list(results)
         finally:
             session.close()
 
     def get_sender_count(self) -> int:
-        """Get total number of known senders."""
         session = self._session()
         try:
-            from sqlalchemy import func
-            result = session.execute(
-                select(func.count(Sender.id))
-            ).scalar()
-            return result or 0
+            return session.execute(select(func.count(Sender.id))).scalar() or 0
         finally:
             session.close()

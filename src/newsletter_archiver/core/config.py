@@ -14,9 +14,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Azure AD
-    azure_client_id: str = ""
-    azure_client_secret: str = ""
+    # Azure AD - defaults to Azure CLI public client ID (works with personal accounts)
+    azure_client_id: str = "04b07795-a71b-4346-935f-02f9a1efa4ce"
 
     # Email
     outlook_email: str = "dannewman70@outlook.com"
@@ -48,11 +47,11 @@ class Settings(BaseSettings):
 
     @property
     def token_path(self) -> Path:
-        return self.archive_dir / "o365_token.txt"
+        return self.archive_dir / "msal_token_cache.json"
 
     @property
     def is_configured(self) -> bool:
-        return bool(self.azure_client_id and self.azure_client_secret)
+        return bool(self.azure_client_id)
 
     def ensure_dirs(self) -> None:
         """Create all required directories."""

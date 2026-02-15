@@ -18,40 +18,50 @@ class ParsedEmail:
     headers: dict
 
 
-def parse_message(message) -> ParsedEmail:
-    """Parse an O365 Message object into a ParsedEmail.
+def parse_message(message: dict) -> ParsedEmail:
+    """Parse a Microsoft Graph API message dict into a ParsedEmail.
 
     Args:
-        message: An O365 Message object.
+        message: A message dict from the Graph API response.
 
     Returns:
         ParsedEmail with extracted fields.
     """
-    sender = message.sender
-    sender_email = sender.address if sender else ""
-    sender_name = sender.name if sender else ""
+    from_field = message.get("from", {}).get("emailAddress", {})
+    sender_email = from_field.get("address", "")
+    sender_name = from_field.get("name", "")
 
-    html_body = message.body or ""
-    # O365 returns HTML body by default; get plain text too
-    text_body = ""
+    body = message.get("body", {})
+    html_body = body.get("content", "") if body.get("contentType") == "html" else ""
+    text_body = body.get("content", "") if body.get("contentType") == "text" else ""
 
-    # Check for newsletter indicators
-    is_newsletter = _detect_newsletter(message, html_body)
+    # Parse received date
+    received_str = message.get("receivedDateTime", "")
+    try:
+        received_date = datetime.fromisoformat(received_str.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        received_date = datetime.utcnow()
+
+    # Extract headers into a dict
+    raw_headers = message.get("internetMessageHeaders", []) or []
+    headers = {h["name"]: h["value"] for h in raw_headers}
+
+    is_newsletter = _detect_newsletter(sender_email, html_body, headers)
 
     return ParsedEmail(
-        message_id=message.object_id or "",
-        subject=message.subject or "(No Subject)",
+        message_id=message.get("id", ""),
+        subject=message.get("subject", "(No Subject)") or "(No Subject)",
         sender_email=sender_email,
         sender_name=sender_name,
-        received_date=message.received or datetime.utcnow(),
+        received_date=received_date,
         html_body=html_body,
         text_body=text_body,
         is_newsletter=is_newsletter,
-        headers={},
+        headers=headers,
     )
 
 
-def _detect_newsletter(message, html_body: str) -> bool:
+def _detect_newsletter(sender_email: str, html_body: str, headers: dict) -> bool:
     """Heuristic to determine if a message is a newsletter.
 
     Checks for:
@@ -59,14 +69,13 @@ def _detect_newsletter(message, html_body: str) -> bool:
     - Common newsletter sender patterns
     - Unsubscribe links in body
     """
-    # Check List-Unsubscribe header via message properties
-    # O365 doesn't expose raw headers easily, so we check the body
-    # and known patterns
+    # Check List-Unsubscribe header (most reliable signal)
+    if "List-Unsubscribe" in headers:
+        return True
 
     # Check body for unsubscribe indicators
     body_lower = html_body.lower()
     unsubscribe_indicators = [
-        "list-unsubscribe",
         "unsubscribe",
         "email preferences",
         "manage your subscription",
@@ -90,12 +99,9 @@ def _detect_newsletter(message, html_body: str) -> bool:
         "sendfox.com",
     ]
 
-    sender_email = ""
-    if message.sender:
-        sender_email = message.sender.address.lower()
-
+    email_lower = sender_email.lower()
     from_newsletter_platform = any(
-        domain in sender_email for domain in newsletter_domains
+        domain in email_lower for domain in newsletter_domains
     )
 
     # Score-based: 2+ indicators or from known platform

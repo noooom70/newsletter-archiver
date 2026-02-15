@@ -45,13 +45,12 @@ class Sender(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     email = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, default="")
-    is_newsletter = Column(Boolean, default=True)
-    auto_fetch = Column(Boolean, default=True)
-    priority = Column(Integer, default=0)  # higher = more important
+    status = Column(String, default="pending", index=True)  # pending, approved, denied
+    sample_subject = Column(String, default="")  # example subject line for review
     first_seen = Column(DateTime, default=lambda: datetime.now(UTC))
 
     def __repr__(self) -> str:
-        return f"<Sender {self.email}>"
+        return f"<Sender {self.email} ({self.status})>"
 
 
 def get_engine(db_url: str):
