@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "newsletter-archiver"
+version = "0.1.0"
+description = "CLI tool to archive email newsletters from Outlook with AI-powered search"
+authors = ["Dan Newman"]
+readme = "README.md"
+packages = [{include = "newsletter_archiver", from = "src"}]
+
+[tool.poetry.scripts]
+newsletter-archiver = "newsletter_archiver.cli.main:app"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+typer = {extras = ["all"], version = "^0.15"}
+rich = "^13.0"
+O365 = "^2.0"
+beautifulsoup4 = "^4.12"
+markdownify = "^0.14"
+sqlalchemy = "^2.0"
+pydantic-settings = "^2.0"
+python-dotenv = "^1.0"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-cov = "^6.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

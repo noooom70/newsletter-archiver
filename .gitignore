@@ -1,0 +1,33 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+
+# O365 token cache
+o365_token.txt
+
+# Archive data (user-specific)
+data/
+
+# SQLite databases
+*.db
+
+# Coverage
+htmlcov/
+.coverage
