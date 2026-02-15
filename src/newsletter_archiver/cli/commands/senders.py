@@ -41,8 +41,15 @@ def review():
         )
 
         if choice == "a":
+            mode_choice = Prompt.ask(
+                "  Archive mode: [a]uto (archive all) / [r]eview (approve each email)",
+                choices=["a", "r"],
+                default="r",
+            )
+            mode = "auto" if mode_choice == "a" else "review"
             db.set_sender_status(sender.email, "approved")
-            rprint(f"  [green]Approved[/green]")
+            db.set_sender_mode(sender.email, mode)
+            rprint(f"  [green]Approved[/green] (mode: {mode})")
         elif choice == "d":
             db.set_sender_status(sender.email, "denied")
             rprint(f"  [red]Denied[/red]")
@@ -87,6 +94,7 @@ def list_senders(
 
     table = Table(title="Newsletter Senders")
     table.add_column("Status", style="bold")
+    table.add_column("Mode")
     table.add_column("Name")
     table.add_column("Email")
     table.add_column("Example Subject")
@@ -97,9 +105,15 @@ def list_senders(
         "denied": "[red]denied[/red]",
     }
 
+    mode_styles = {
+        "auto": "[cyan]auto[/cyan]",
+        "review": "[magenta]review[/magenta]",
+    }
+
     for s in senders:
         table.add_row(
             status_styles.get(s.status, s.status),
+            mode_styles.get(s.mode, s.mode or "-") if s.status == "approved" else "-",
             s.name or "-",
             s.email,
             (s.sample_subject[:50] + "...") if len(s.sample_subject or "") > 50 else (s.sample_subject or "-"),
@@ -112,8 +126,13 @@ def list_senders(
 def add(
     email: str = typer.Argument(help="Sender email address"),
     name: str = typer.Option("", "--name", "-n", help="Display name for the sender"),
+    mode: str = typer.Option("review", "--mode", "-m", help="Archive mode: auto or review"),
 ):
     """Manually add a sender as approved."""
+    if mode not in ("auto", "review"):
+        rprint(f"[red]Invalid mode:[/red] {mode}. Use: auto, review")
+        raise typer.Exit(1)
+
     settings = get_settings()
     settings.ensure_dirs()
     db = DatabaseManager()
@@ -121,10 +140,12 @@ def add(
     existing = db.get_sender(email)
     if existing:
         db.set_sender_status(email, "approved")
-        rprint(f"[green]Approved[/green] existing sender: [bold]{email}[/bold]")
+        db.set_sender_mode(email, mode)
+        rprint(f"[green]Approved[/green] existing sender: [bold]{email}[/bold] (mode: {mode})")
     else:
         db.upsert_sender(email=email, name=name, status="approved")
-        rprint(f"[green]Added and approved[/green]: [bold]{email}[/bold]")
+        db.set_sender_mode(email, mode)
+        rprint(f"[green]Added and approved[/green]: [bold]{email}[/bold] (mode: {mode})")
 
 
 @app.command()
@@ -141,3 +162,30 @@ def remove(
         rprint(f"[red]Denied[/red]: [bold]{email}[/bold]")
     else:
         rprint(f"[yellow]Sender not found:[/yellow] {email}")
+
+
+@app.command("set-mode")
+def set_mode(
+    email: str = typer.Argument(help="Sender email address"),
+    mode: str = typer.Argument(help="Archive mode: auto or review"),
+):
+    """Change a sender's archive mode (auto or review)."""
+    if mode not in ("auto", "review"):
+        rprint(f"[red]Invalid mode:[/red] {mode}. Use: auto, review")
+        raise typer.Exit(1)
+
+    settings = get_settings()
+    settings.ensure_dirs()
+    db = DatabaseManager()
+
+    sender = db.get_sender(email)
+    if not sender:
+        rprint(f"[yellow]Sender not found:[/yellow] {email}")
+        raise typer.Exit(1)
+
+    if sender.status != "approved":
+        rprint(f"[yellow]Sender is not approved[/yellow] (status: {sender.status}). Approve first.")
+        raise typer.Exit(1)
+
+    db.set_sender_mode(email, mode)
+    rprint(f"Set mode for [bold]{email}[/bold] to [cyan]{mode}[/cyan]")

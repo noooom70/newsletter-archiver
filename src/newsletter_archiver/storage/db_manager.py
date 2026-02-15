@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from newsletter_archiver.core.config import get_settings
 from newsletter_archiver.core.database import (
     Newsletter,
+    PendingEmail,
     Sender,
     create_tables,
     get_session,
@@ -194,5 +195,119 @@ class DatabaseManager:
         session = self._session()
         try:
             return session.execute(select(func.count(Sender.id))).scalar() or 0
+        finally:
+            session.close()
+
+    def set_sender_mode(self, email: str, mode: str) -> Optional[Sender]:
+        """Update a sender's archive mode (auto/review)."""
+        session = self._session()
+        try:
+            sender = session.execute(
+                select(Sender).where(Sender.email == email)
+            ).scalar_one_or_none()
+            if sender:
+                sender.mode = mode
+                session.commit()
+                session.refresh(sender)
+            return sender
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def get_senders_by_mode(self, mode: str) -> list[Sender]:
+        """Get all approved senders with a given mode."""
+        session = self._session()
+        try:
+            results = session.execute(
+                select(Sender)
+                .where(Sender.status == "approved", Sender.mode == mode)
+                .order_by(Sender.email)
+            ).scalars().all()
+            return list(results)
+        finally:
+            session.close()
+
+    # --- Pending email operations ---
+
+    def save_pending_email(
+        self,
+        message_id: str,
+        subject: str,
+        sender_email: str,
+        sender_name: str,
+        received_date: datetime,
+        html_body: str,
+    ) -> PendingEmail:
+        """Queue an email for review."""
+        session = self._session()
+        try:
+            pending = PendingEmail(
+                message_id=message_id,
+                subject=subject,
+                sender_email=sender_email,
+                sender_name=sender_name,
+                received_date=received_date,
+                html_body=html_body,
+            )
+            session.add(pending)
+            session.commit()
+            session.refresh(pending)
+            return pending
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def pending_email_exists(self, message_id: str) -> bool:
+        """Check if a pending email with this message_id already exists."""
+        session = self._session()
+        try:
+            result = session.execute(
+                select(PendingEmail).where(PendingEmail.message_id == message_id)
+            ).scalar_one_or_none()
+            return result is not None
+        finally:
+            session.close()
+
+    def get_pending_emails(self, sender_email: Optional[str] = None) -> list[PendingEmail]:
+        """List queued emails, optionally filtered by sender."""
+        session = self._session()
+        try:
+            stmt = select(PendingEmail).order_by(PendingEmail.received_date.desc())
+            if sender_email:
+                stmt = stmt.where(PendingEmail.sender_email == sender_email)
+            results = session.execute(stmt).scalars().all()
+            return list(results)
+        finally:
+            session.close()
+
+    def get_pending_email(self, pending_id: int) -> Optional[PendingEmail]:
+        """Get a single pending email by ID."""
+        session = self._session()
+        try:
+            return session.execute(
+                select(PendingEmail).where(PendingEmail.id == pending_id)
+            ).scalar_one_or_none()
+        finally:
+            session.close()
+
+    def delete_pending_email(self, pending_id: int) -> bool:
+        """Remove a pending email after approve/deny."""
+        session = self._session()
+        try:
+            pending = session.execute(
+                select(PendingEmail).where(PendingEmail.id == pending_id)
+            ).scalar_one_or_none()
+            if pending:
+                session.delete(pending)
+                session.commit()
+                return True
+            return False
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()

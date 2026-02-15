@@ -123,3 +123,104 @@ def test_db_manager_add_approved_directly(settings):
     # Manual add goes straight to approved
     db.upsert_sender(email="fav@newsletter.com", name="Favorite", status="approved")
     assert "fav@newsletter.com" in db.get_approved_sender_emails()
+
+
+def test_db_manager_sender_mode(settings):
+    settings.ensure_dirs()
+    db = DatabaseManager(db_url=f"sqlite:///{settings.db_path}")
+
+    # Default mode is review
+    db.upsert_sender(email="test@example.com", name="Test", status="approved")
+    sender = db.get_sender("test@example.com")
+    assert sender.mode == "review"
+
+    # Set to auto
+    db.set_sender_mode("test@example.com", "auto")
+    sender = db.get_sender("test@example.com")
+    assert sender.mode == "auto"
+
+    # get_senders_by_mode
+    db.upsert_sender(email="auto@example.com", name="Auto", status="approved")
+    db.set_sender_mode("auto@example.com", "auto")
+    db.upsert_sender(email="review@example.com", name="Review", status="approved")
+
+    auto_senders = db.get_senders_by_mode("auto")
+    review_senders = db.get_senders_by_mode("review")
+    auto_emails = {s.email for s in auto_senders}
+    review_emails = {s.email for s in review_senders}
+    assert "test@example.com" in auto_emails
+    assert "auto@example.com" in auto_emails
+    assert "review@example.com" in review_emails
+
+
+def test_db_manager_pending_email_crud(settings):
+    settings.ensure_dirs()
+    db = DatabaseManager(db_url=f"sqlite:///{settings.db_path}")
+
+    # No pending emails initially
+    assert db.get_pending_emails() == []
+    assert not db.pending_email_exists("msg-100")
+
+    # Save a pending email
+    pending = db.save_pending_email(
+        message_id="msg-100",
+        subject="Review This Newsletter",
+        sender_email="news@example.com",
+        sender_name="News",
+        received_date=datetime(2025, 6, 15, 10, 0),
+        html_body="<h1>Hello</h1>",
+    )
+    assert pending.id is not None
+    assert pending.message_id == "msg-100"
+
+    # Exists check
+    assert db.pending_email_exists("msg-100")
+    assert not db.pending_email_exists("msg-999")
+
+    # List pending
+    all_pending = db.get_pending_emails()
+    assert len(all_pending) == 1
+    assert all_pending[0].subject == "Review This Newsletter"
+
+    # Filter by sender
+    assert len(db.get_pending_emails(sender_email="news@example.com")) == 1
+    assert len(db.get_pending_emails(sender_email="other@example.com")) == 0
+
+    # Get by ID
+    fetched = db.get_pending_email(pending.id)
+    assert fetched is not None
+    assert fetched.message_id == "msg-100"
+
+    # Delete
+    assert db.delete_pending_email(pending.id) is True
+    assert db.get_pending_emails() == []
+    assert not db.pending_email_exists("msg-100")
+
+    # Delete non-existent
+    assert db.delete_pending_email(999) is False
+
+
+def test_db_manager_pending_email_dedup(settings):
+    settings.ensure_dirs()
+    db = DatabaseManager(db_url=f"sqlite:///{settings.db_path}")
+
+    db.save_pending_email(
+        message_id="msg-200",
+        subject="First",
+        sender_email="a@example.com",
+        sender_name="A",
+        received_date=datetime(2025, 6, 15),
+        html_body="<p>1</p>",
+    )
+
+    # Saving same message_id should raise (unique constraint)
+    import pytest
+    with pytest.raises(Exception):
+        db.save_pending_email(
+            message_id="msg-200",
+            subject="Duplicate",
+            sender_email="a@example.com",
+            sender_name="A",
+            received_date=datetime(2025, 6, 15),
+            html_body="<p>2</p>",
+        )

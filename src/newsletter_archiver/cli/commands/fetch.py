@@ -128,14 +128,22 @@ def _scan_for_senders(messages: list, db: DatabaseManager, approved_senders: set
 
 
 def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set[str]):
-    """Archive emails from approved senders only."""
+    """Archive emails from approved senders only.
+
+    Auto-mode senders are archived immediately.
+    Review-mode senders have emails queued in pending_emails for individual approval.
+    """
     if not approved_senders:
         rprint("[yellow]No approved senders yet.[/yellow]")
         rprint("Run [cyan]newsletter-archiver fetch --scan[/cyan] to discover newsletter senders,")
         rprint("then [cyan]newsletter-archiver senders review[/cyan] to approve them.")
         raise typer.Exit(0)
 
+    # Build a set of auto-mode sender emails for fast lookup
+    auto_senders = {s.email for s in db.get_senders_by_mode("auto")}
+
     saved = 0
+    queued = 0
     skipped = 0
     not_approved = 0
     new_pending = 0
@@ -149,7 +157,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
         for message in messages:
             parsed = parse_message(message)
 
-            # Only archive from approved senders
+            # Only process from approved senders
             if parsed.sender_email not in approved_senders:
                 # If it looks like a newsletter from an unknown sender, add as pending
                 if parsed.is_newsletter and not db.get_sender(parsed.sender_email):
@@ -164,60 +172,79 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                 progress.advance(task)
                 continue
 
-            # Skip if already archived
+            # Skip if already archived or already queued
             if db.newsletter_exists(parsed.message_id):
                 skipped += 1
                 progress.advance(task)
                 continue
+            if db.pending_email_exists(parsed.message_id):
+                skipped += 1
+                progress.advance(task)
+                continue
 
-            # Convert content
-            markdown_body = html_to_markdown(parsed.html_body)
-            markdown_doc = build_markdown_document(
-                subject=parsed.subject,
-                sender_name=parsed.sender_name,
-                sender_email=parsed.sender_email,
-                received_date=parsed.received_date.isoformat(),
-                markdown_body=markdown_body,
-            )
+            # Route based on sender mode
+            if parsed.sender_email in auto_senders:
+                # Auto mode: archive immediately
+                markdown_body = html_to_markdown(parsed.html_body)
+                markdown_doc = build_markdown_document(
+                    subject=parsed.subject,
+                    sender_name=parsed.sender_name,
+                    sender_email=parsed.sender_email,
+                    received_date=parsed.received_date.isoformat(),
+                    markdown_body=markdown_body,
+                )
 
-            word_count = calculate_word_count(markdown_body)
-            reading_time = calculate_reading_time(word_count)
+                word_count = calculate_word_count(markdown_body)
+                reading_time = calculate_reading_time(word_count)
 
-            # Save files
-            base_path = get_archive_path(
-                sender_name=parsed.sender_name,
-                sender_email=parsed.sender_email,
-                received_date=parsed.received_date,
-                subject=parsed.subject,
-            )
-            md_path, html_path = save_newsletter_files(
-                base_path=base_path,
-                markdown_content=markdown_doc,
-                html_content=parsed.html_body,
-            )
+                base_path = get_archive_path(
+                    sender_name=parsed.sender_name,
+                    sender_email=parsed.sender_email,
+                    received_date=parsed.received_date,
+                    subject=parsed.subject,
+                )
+                md_path, html_path = save_newsletter_files(
+                    base_path=base_path,
+                    markdown_content=markdown_doc,
+                    html_content=parsed.html_body,
+                )
 
-            # Save to database
-            db.save_newsletter(
-                message_id=parsed.message_id,
-                subject=parsed.subject,
-                sender_email=parsed.sender_email,
-                sender_name=parsed.sender_name,
-                received_date=parsed.received_date,
-                markdown_path=str(md_path),
-                html_path=str(html_path),
-                word_count=word_count,
-                reading_time_minutes=reading_time,
-            )
+                db.save_newsletter(
+                    message_id=parsed.message_id,
+                    subject=parsed.subject,
+                    sender_email=parsed.sender_email,
+                    sender_name=parsed.sender_name,
+                    received_date=parsed.received_date,
+                    markdown_path=str(md_path),
+                    html_path=str(html_path),
+                    word_count=word_count,
+                    reading_time_minutes=reading_time,
+                )
+                saved += 1
+            else:
+                # Review mode: queue for individual approval
+                db.save_pending_email(
+                    message_id=parsed.message_id,
+                    subject=parsed.subject,
+                    sender_email=parsed.sender_email,
+                    sender_name=parsed.sender_name,
+                    received_date=parsed.received_date,
+                    html_body=parsed.html_body,
+                )
+                queued += 1
 
-            saved += 1
             progress.advance(task)
 
     # Summary
     rprint()
     rprint(f"[green]✓[/green] Done!")
-    rprint(f"  Saved: [bold green]{saved}[/bold green] newsletters")
+    if saved:
+        rprint(f"  Archived: [bold green]{saved}[/bold green] newsletters")
+    if queued:
+        rprint(f"  Queued for review: [bold yellow]{queued}[/bold yellow]")
+        rprint(f"  Run [cyan]newsletter-archiver review[/cyan] to approve or deny them.")
     if skipped:
-        rprint(f"  Already archived: [dim]{skipped}[/dim]")
+        rprint(f"  Already archived/queued: [dim]{skipped}[/dim]")
     if not_approved:
         rprint(f"  Skipped (not approved): [dim]{not_approved}[/dim]")
     if new_pending:

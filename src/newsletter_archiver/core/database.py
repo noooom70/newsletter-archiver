@@ -9,6 +9,7 @@ from sqlalchemy import (
     Float,
     Integer,
     String,
+    Text,
     create_engine,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
@@ -46,11 +47,28 @@ class Sender(Base):
     email = Column(String, unique=True, nullable=False, index=True)
     name = Column(String, default="")
     status = Column(String, default="pending", index=True)  # pending, approved, denied
+    mode = Column(String, default="review")  # auto or review
     sample_subject = Column(String, default="")  # example subject line for review
     first_seen = Column(DateTime, default=lambda: datetime.now(UTC))
 
     def __repr__(self) -> str:
         return f"<Sender {self.email} ({self.status})>"
+
+
+class PendingEmail(Base):
+    __tablename__ = "pending_emails"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    message_id = Column(String, unique=True, nullable=False, index=True)
+    subject = Column(String, nullable=False)
+    sender_email = Column(String, nullable=False, index=True)
+    sender_name = Column(String, default="")
+    received_date = Column(DateTime, nullable=False)
+    html_body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(UTC))
+
+    def __repr__(self) -> str:
+        return f"<PendingEmail {self.subject!r} from {self.sender_email}>"
 
 
 def get_engine(db_url: str):
