@@ -88,6 +88,9 @@ def _is_transactional_subject(subject: str) -> bool:
         "thank you for your purchase",
         "subscription confirmed",
         "renewal confirmation",
+        "will renew",
+        "subscription renewal",
+        "auto-renewal",
     ]
     return any(pattern in subject_lower for pattern in transactional_patterns)
 

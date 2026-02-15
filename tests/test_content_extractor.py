@@ -77,6 +77,7 @@ def test_transactional_subject_detection():
     assert _is_transactional_subject("Password Reset Request")
     assert _is_transactional_subject("Your invoice for February")
     assert _is_transactional_subject("Welcome to Our Service")
+    assert _is_transactional_subject("Your Stratechery subscription will renew soon.")
 
     # Should NOT be detected as transactional
     assert not _is_transactional_subject("Aggregators and AI (This Week in Stratechery)")

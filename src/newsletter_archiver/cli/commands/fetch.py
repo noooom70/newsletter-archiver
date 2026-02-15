@@ -14,7 +14,7 @@ from newsletter_archiver.fetcher.content_extractor import (
     calculate_word_count,
     html_to_markdown,
 )
-from newsletter_archiver.fetcher.email_parser import parse_message
+from newsletter_archiver.fetcher.email_parser import _is_transactional_subject, parse_message
 from newsletter_archiver.fetcher.graph_client import GraphClient
 from newsletter_archiver.storage.db_manager import DatabaseManager
 from newsletter_archiver.storage.file_manager import (
@@ -27,11 +27,13 @@ def app(
     days_back: int = typer.Option(7, "--days-back", "-d", help="Number of days back to fetch"),
     sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender email or domain"),
     scan: bool = typer.Option(False, "--scan", help="Scan for new newsletter senders without archiving"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be filtered out without archiving or queuing"),
 ):
     """Fetch newsletters from Outlook and archive them.
 
     By default, only archives emails from approved senders.
     Use --scan to discover new newsletter senders for review.
+    Use --dry-run to audit the newsletter detection filter.
     """
     settings = get_settings()
 
@@ -78,10 +80,42 @@ def app(
 
     approved_senders = db.get_approved_sender_emails()
 
-    if scan:
+    if dry_run:
+        _dry_run(messages, approved_senders)
+    elif scan:
         _scan_for_senders(messages, db, approved_senders)
     else:
         _archive_approved(messages, db, approved_senders)
+
+
+def _dry_run(messages: list, approved_senders: set[str]):
+    """Show how the transactional subject filter would classify each email from approved senders."""
+    accepted = []
+    filtered = []
+
+    for message in messages:
+        parsed = parse_message(message)
+        if parsed.sender_email not in approved_senders:
+            continue
+        if _is_transactional_subject(parsed.subject):
+            filtered.append(parsed)
+        else:
+            accepted.append(parsed)
+
+    if filtered:
+        rprint(f"\n[red bold]Filtered out ({len(filtered)}):[/red bold]")
+        for p in filtered:
+            rprint(f"  [red]✗[/red] {p.sender_email}: {p.subject}")
+    else:
+        rprint(f"\n[green]No emails filtered out.[/green]")
+
+    if accepted:
+        rprint(f"\n[green bold]Would archive/queue ({len(accepted)}):[/green bold]")
+        for p in accepted:
+            rprint(f"  [green]✓[/green] {p.sender_email}: {p.subject}")
+
+    rprint(f"\nTotal from approved senders: {len(accepted) + len(filtered)} "
+           f"(accepted: {len(accepted)}, filtered: {len(filtered)})")
 
 
 def _scan_for_senders(messages: list, db: DatabaseManager, approved_senders: set[str]):
@@ -172,8 +206,10 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                 progress.advance(task)
                 continue
 
-            # Skip non-newsletter emails (receipts, confirmations, etc.)
-            if not parsed.is_newsletter:
+            # For approved senders, only skip obvious transactional emails.
+            # The user already vouched for this sender — don't require
+            # positive newsletter signals on every email.
+            if _is_transactional_subject(parsed.subject):
                 skipped += 1
                 progress.advance(task)
                 continue
