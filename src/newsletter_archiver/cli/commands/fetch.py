@@ -32,10 +32,12 @@ def app(
     scan: bool = typer.Option(False, "--scan", help="Scan for new newsletter senders without archiving"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be filtered out without archiving or queuing"),
     auto: bool = typer.Option(False, "--auto", help="Archive all emails immediately, ignoring sender mode"),
+    update: bool = typer.Option(False, "--update", "-u", help="Fetch from the last archived email date to now"),
 ):
     """Fetch newsletters from Outlook and archive them.
 
     By default, only archives emails from approved senders.
+    Use --update to fetch everything since the last archived email.
     Use --from/--to for a date range (e.g. --from 2025-06-01 --to 2025-12-31).
     Use --scan to discover new newsletter senders for review.
     Use --dry-run to audit the newsletter detection filter.
@@ -65,10 +67,17 @@ def app(
 
     rprint(f"[green]✓[/green] Authenticated")
 
-    # Parse date range
+    # Handle --update: fetch from last archived email date
     parsed_from = None
     parsed_to = None
-    if from_date:
+    if update:
+        latest = db.get_latest_received_date()
+        if latest:
+            parsed_from = latest
+            rprint(f"Fetching emails since last archived: [bold]{latest:%Y-%m-%d %H:%M}[/bold]")
+        else:
+            rprint("[yellow]No archived emails found. Using --days-back instead.[/yellow]")
+    elif from_date:
         try:
             parsed_from = datetime.strptime(from_date, "%Y-%m-%d")
         except ValueError:

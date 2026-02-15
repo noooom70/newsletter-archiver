@@ -83,6 +83,16 @@ class DatabaseManager:
         finally:
             session.close()
 
+    def get_latest_received_date(self) -> Optional[datetime]:
+        """Get the most recent received_date across all archived newsletters."""
+        session = self._session()
+        try:
+            return session.execute(
+                select(func.max(Newsletter.received_date))
+            ).scalar()
+        finally:
+            session.close()
+
     # --- Sender operations ---
 
     def get_sender(self, email: str) -> Optional[Sender]:
