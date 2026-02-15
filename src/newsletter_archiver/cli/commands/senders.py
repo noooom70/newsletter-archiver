@@ -1,5 +1,7 @@
 """Sender management commands - review, list, add, remove."""
 
+from typing import Optional
+
 import typer
 from rich import print as rprint
 from rich.prompt import Prompt
@@ -62,13 +64,21 @@ def review():
 
 
 @app.command("list")
-def list_senders():
+def list_senders(
+    status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status: approved, pending, denied"),
+):
     """Show all known senders and their status."""
     settings = get_settings()
     settings.ensure_dirs()
     db = DatabaseManager()
 
-    senders = db.get_all_senders()
+    if status:
+        if status not in ("approved", "pending", "denied"):
+            rprint(f"[red]Invalid status:[/red] {status}. Use: approved, pending, denied")
+            raise typer.Exit(1)
+        senders = db.get_senders_by_status(status)
+    else:
+        senders = db.get_all_senders()
 
     if not senders:
         rprint("[yellow]No senders found.[/yellow]")
