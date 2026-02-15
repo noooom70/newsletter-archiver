@@ -11,6 +11,8 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    inspect,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -76,9 +78,22 @@ def get_engine(db_url: str):
 
 
 def create_tables(db_url: str) -> None:
-    """Create all tables if they don't exist."""
+    """Create all tables if they don't exist, and migrate schema."""
     engine = get_engine(db_url)
     Base.metadata.create_all(engine)
+    _migrate(engine)
+
+
+def _migrate(engine) -> None:
+    """Add columns that may be missing from older databases."""
+    inspector = inspect(engine)
+
+    # Add senders.mode if missing (added in auto/review feature)
+    if "senders" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("senders")}
+        if "mode" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE senders ADD COLUMN mode VARCHAR DEFAULT 'review'"))
 
 
 def get_session(db_url: str) -> Session:

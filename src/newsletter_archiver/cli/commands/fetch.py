@@ -172,6 +172,12 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                 progress.advance(task)
                 continue
 
+            # Skip non-newsletter emails (receipts, confirmations, etc.)
+            if not parsed.is_newsletter:
+                skipped += 1
+                progress.advance(task)
+                continue
+
             # Skip if already archived or already queued
             if db.newsletter_exists(parsed.message_id):
                 skipped += 1
