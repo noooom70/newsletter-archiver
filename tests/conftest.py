@@ -20,6 +20,7 @@ def settings(tmp_archive):
         azure_client_id="test-client-id",
         azure_client_secret="test-client-secret",
         archive_dir=tmp_archive,
+        local_dir=tmp_archive / "local",
     )
 
 

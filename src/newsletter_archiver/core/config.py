@@ -14,32 +14,33 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Azure AD - defaults to Azure CLI public client ID (works with personal accounts)
-    azure_client_id: str = "04b07795-a71b-4346-935f-02f9a1efa4ce"
+    # Azure AD - defaults to Microsoft Graph CLI public client ID
+    azure_client_id: str = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
 
     # Email
     outlook_email: str = "dannewman70@outlook.com"
 
-    # Archive location
+    # Archive files location (backed up via Proton Drive)
     archive_dir: Path = Field(
+        default_factory=lambda: Path("/mnt/c/Users/danne/Proton Drive/noomonics/My files/Projects/newsletter-archive")
+    )
+
+    # Local data directory (SQLite DB and auth tokens — not cloud-synced)
+    local_dir: Path = Field(
         default_factory=lambda: Path.home() / ".newsletter-archive"
     )
 
     # Fetching defaults
     default_days_back: int = 7
-    batch_size: int = 50
-
-    @property
-    def data_dir(self) -> Path:
-        return self.archive_dir / "data"
+    batch_size: int = 100
 
     @property
     def archives_dir(self) -> Path:
-        return self.data_dir / "archives"
+        return self.archive_dir / "archives"
 
     @property
     def db_path(self) -> Path:
-        return self.data_dir / "newsletters.db"
+        return self.local_dir / "data" / "newsletters.db"
 
     @property
     def db_url(self) -> str:
@@ -47,7 +48,7 @@ class Settings(BaseSettings):
 
     @property
     def token_path(self) -> Path:
-        return self.archive_dir / "msal_token_cache.json"
+        return self.local_dir / "msal_token_cache.json"
 
     @property
     def is_configured(self) -> bool:
@@ -56,8 +57,9 @@ class Settings(BaseSettings):
     def ensure_dirs(self) -> None:
         """Create all required directories."""
         self.archive_dir.mkdir(parents=True, exist_ok=True)
-        self.data_dir.mkdir(parents=True, exist_ok=True)
         self.archives_dir.mkdir(parents=True, exist_ok=True)
+        self.local_dir.mkdir(parents=True, exist_ok=True)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
 
 _settings: Optional[Settings] = None
