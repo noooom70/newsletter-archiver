@@ -46,7 +46,8 @@ def parse_message(message: dict) -> ParsedEmail:
     raw_headers = message.get("internetMessageHeaders", []) or []
     headers = {h["name"]: h["value"] for h in raw_headers}
 
-    is_newsletter = _detect_newsletter(sender_email, html_body, headers)
+    subject = message.get("subject", "(No Subject)") or "(No Subject)"
+    is_newsletter = _detect_newsletter(sender_email, html_body, headers, subject)
 
     return ParsedEmail(
         message_id=message.get("id", ""),
@@ -61,15 +62,50 @@ def parse_message(message: dict) -> ParsedEmail:
     )
 
 
-def _detect_newsletter(sender_email: str, html_body: str, headers: dict) -> bool:
+def _is_transactional_subject(subject: str) -> bool:
+    """Check if the subject line looks like a transactional email."""
+    subject_lower = subject.lower()
+    transactional_patterns = [
+        "your receipt",
+        "your order",
+        "order confirmation",
+        "payment confirmation",
+        "payment received",
+        "confirm your",
+        "verify your",
+        "password reset",
+        "reset your password",
+        "your invoice",
+        "invoice for",
+        "your account",
+        "account update",
+        "sign in",
+        "log in",
+        "shipping confirmation",
+        "delivery confirmation",
+        "has shipped",
+        "welcome to",
+        "thank you for your purchase",
+        "subscription confirmed",
+        "renewal confirmation",
+    ]
+    return any(pattern in subject_lower for pattern in transactional_patterns)
+
+
+def _detect_newsletter(sender_email: str, html_body: str, headers: dict, subject: str = "") -> bool:
     """Heuristic to determine if a message is a newsletter.
 
     Checks for:
-    - List-Unsubscribe header (most reliable)
+    - Transactional subject patterns (negative signal)
+    - List-Unsubscribe header
     - Common newsletter sender patterns
     - Unsubscribe links in body
     """
-    # Check List-Unsubscribe header (most reliable signal)
+    # Reject transactional emails by subject
+    if _is_transactional_subject(subject):
+        return False
+
+    # Check List-Unsubscribe header
     if "List-Unsubscribe" in headers:
         return True
 

@@ -48,7 +48,7 @@ def app():
         rprint(f"  Date: {email.received_date:%Y-%m-%d %H:%M}")
 
         choice = Prompt.ask(
-            "  Action: [a]pprove, [d]eny, [s]kip, [q]uit",
+            "  Action: \\[a]pprove, \\[d]eny, \\[s]kip, \\[q]uit",
             choices=["a", "d", "s", "q"],
             default="s",
         )

@@ -1,4 +1,4 @@
-"""Tests for HTML cleanup and Markdown conversion."""
+"""Tests for HTML cleanup, Markdown conversion, and newsletter detection."""
 
 from newsletter_archiver.fetcher.content_extractor import (
     build_markdown_document,
@@ -7,6 +7,7 @@ from newsletter_archiver.fetcher.content_extractor import (
     clean_html,
     html_to_markdown,
 )
+from newsletter_archiver.fetcher.email_parser import _is_transactional_subject
 
 
 def test_clean_html_removes_scripts(sample_html):
@@ -66,3 +67,19 @@ def test_calculate_reading_time():
     assert calculate_reading_time(200) == 1.0
     assert calculate_reading_time(500) == 2.5
     assert calculate_reading_time(0) == 0.0
+
+
+def test_transactional_subject_detection():
+    # Should be detected as transactional
+    assert _is_transactional_subject("Your receipt from Stratechery")
+    assert _is_transactional_subject("Your Order Confirmation #12345")
+    assert _is_transactional_subject("Confirm your email address")
+    assert _is_transactional_subject("Password Reset Request")
+    assert _is_transactional_subject("Your invoice for February")
+    assert _is_transactional_subject("Welcome to Our Service")
+
+    # Should NOT be detected as transactional
+    assert not _is_transactional_subject("Aggregators and AI (This Week in Stratechery)")
+    assert not _is_transactional_subject("The Disappearance of Nancy Guthrie")
+    assert not _is_transactional_subject("Longreads + Open Thread")
+    assert not _is_transactional_subject("The World in Brief: Rubio love-bombs Europe")
