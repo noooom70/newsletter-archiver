@@ -28,12 +28,14 @@ def app(
     sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender email or domain"),
     scan: bool = typer.Option(False, "--scan", help="Scan for new newsletter senders without archiving"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be filtered out without archiving or queuing"),
+    auto: bool = typer.Option(False, "--auto", help="Archive all emails immediately, ignoring sender mode"),
 ):
     """Fetch newsletters from Outlook and archive them.
 
     By default, only archives emails from approved senders.
     Use --scan to discover new newsletter senders for review.
     Use --dry-run to audit the newsletter detection filter.
+    Use --auto to archive everything without queuing for review.
     """
     settings = get_settings()
 
@@ -85,7 +87,7 @@ def app(
     elif scan:
         _scan_for_senders(messages, db, approved_senders)
     else:
-        _archive_approved(messages, db, approved_senders)
+        _archive_approved(messages, db, approved_senders, force_auto=auto)
 
 
 def _dry_run(messages: list, approved_senders: set[str]):
@@ -161,11 +163,12 @@ def _scan_for_senders(messages: list, db: DatabaseManager, approved_senders: set
         rprint(f"  Already known: {known}")
 
 
-def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set[str]):
+def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set[str], force_auto: bool = False):
     """Archive emails from approved senders only.
 
     Auto-mode senders are archived immediately.
     Review-mode senders have emails queued in pending_emails for individual approval.
+    When force_auto is True, all emails are archived immediately regardless of sender mode.
     """
     if not approved_senders:
         rprint("[yellow]No approved senders yet.[/yellow]")
@@ -224,8 +227,8 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                 progress.advance(task)
                 continue
 
-            # Route based on sender mode
-            if parsed.sender_email in auto_senders:
+            # Route based on sender mode (or force_auto flag)
+            if force_auto or parsed.sender_email in auto_senders:
                 # Auto mode: archive immediately
                 markdown_body = html_to_markdown(parsed.html_body)
                 markdown_doc = build_markdown_document(
