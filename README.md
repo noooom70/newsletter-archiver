@@ -1,1 +1,188 @@
 # Newsletter Archiver
+
+A CLI tool that fetches email newsletters from Outlook via the Microsoft Graph API, converts them to Markdown, and archives them locally. Built for people who want a searchable, offline archive of their newsletter subscriptions.
+
+## Features
+
+- Fetches emails from Outlook (personal accounts) using device code authentication
+- Sender approval workflow: discover newsletter senders, approve or deny them
+- Per-sender archive mode: **auto** (archive immediately) or **review** (approve each email individually)
+- Converts HTML newsletters to clean Markdown with YAML frontmatter
+- Filters out transactional emails (receipts, confirmations, renewal notices)
+- Deduplication: safe to re-run without creating duplicates
+- Date range support for backfilling archives
+
+## Installation
+
+Requires Python 3.11+.
+
+```bash
+git clone https://github.com/noooom70/newsletter-archiver.git
+cd newsletter-archiver
+poetry install
+```
+
+## Quick Start
+
+### 1. Discover newsletter senders
+
+Scan your inbox for emails that look like newsletters:
+
+```bash
+poetry run newsletter-archiver fetch --scan -d 30
+```
+
+### 2. Approve senders
+
+Review discovered senders and choose an archive mode for each:
+
+```bash
+poetry run newsletter-archiver senders review
+```
+
+- **auto**: all emails from this sender are archived immediately
+- **review**: emails are queued for individual approval
+
+### 3. Fetch and archive
+
+Archive emails from approved senders:
+
+```bash
+poetry run newsletter-archiver fetch -d 30 --auto
+```
+
+### 4. Keep it updated
+
+Fetch everything since the last archived email:
+
+```bash
+poetry run newsletter-archiver fetch --update --auto
+```
+
+## Commands
+
+### fetch
+
+Fetch and archive newsletters from Outlook.
+
+```
+newsletter-archiver fetch [OPTIONS]
+```
+
+| Option | Description |
+|--------|-------------|
+| `-d`, `--days-back` | Number of days back to fetch (default: 7) |
+| `--from` | Start date (YYYY-MM-DD), overrides --days-back |
+| `--to` | End date (YYYY-MM-DD), defaults to today |
+| `-u`, `--update` | Fetch from the last archived email date to now |
+| `-s`, `--sender` | Filter by sender email or domain |
+| `--scan` | Discover new newsletter senders without archiving |
+| `--auto` | Archive all emails immediately, ignoring sender mode |
+| `--dry-run` | Show what the transactional filter would skip |
+
+Examples:
+
+```bash
+# Daily update
+poetry run newsletter-archiver fetch -u --auto
+
+# Backfill a specific date range
+poetry run newsletter-archiver fetch --from 2025-06-01 --to 2025-12-31 --auto
+
+# Audit what gets filtered out
+poetry run newsletter-archiver fetch -d 30 --dry-run
+
+# Discover new senders from the last 90 days
+poetry run newsletter-archiver fetch --scan -d 90
+```
+
+### senders
+
+Manage newsletter senders.
+
+```bash
+# Interactively approve/deny pending senders
+poetry run newsletter-archiver senders review
+
+# List all senders and their status/mode
+poetry run newsletter-archiver senders list
+
+# Filter by status
+poetry run newsletter-archiver senders list --status approved
+
+# Manually add a sender
+poetry run newsletter-archiver senders add user@example.com --name "Example" --mode auto
+
+# Deny a sender
+poetry run newsletter-archiver senders remove user@example.com
+
+# Change a sender's archive mode
+poetry run newsletter-archiver senders set-mode user@example.com auto
+```
+
+### review
+
+Approve or deny individual queued emails (from review-mode senders).
+
+```bash
+poetry run newsletter-archiver review
+```
+
+For each email, choose:
+- **a** - approve (archive the email)
+- **d** - deny (discard)
+- **s** - skip (leave for later)
+- **q** - quit
+
+## Archive Structure
+
+Newsletters are saved as both Markdown and HTML:
+
+```
+archives/
+  2025/
+    06/
+      sender-name/
+        2025-06-15_article-title.md
+        2025-06-15_article-title.html
+```
+
+The Markdown files include YAML frontmatter with metadata (title, sender, date, word count, reading time).
+
+## Storage
+
+The archive is split across two locations:
+
+- **Archive files** (Markdown + HTML): configurable, defaults to `~/.newsletter-archive/`. Can be placed on a cloud-synced drive for backup.
+- **Database + auth tokens**: `~/.newsletter-archive/` on the local filesystem. SQLite should not be placed on a cloud-synced drive to avoid corruption.
+
+## Transactional Email Filtering
+
+Emails from approved senders are filtered by subject line to skip non-newsletter content like receipts and account notifications. Patterns include:
+
+- Receipts ("your receipt", "your order", "your invoice")
+- Account emails ("confirm your", "verify your", "password reset")
+- Renewal notices ("will renew", "subscription renewal")
+- Welcome emails ("welcome to")
+
+Use `--dry-run` to audit what gets filtered.
+
+## Development
+
+```bash
+# Run tests
+poetry run pytest
+
+# Run tests with verbose output
+poetry run pytest -v
+```
+
+## Authentication
+
+Uses Microsoft's device code flow for authentication. On first run, you'll be prompted to:
+
+1. Open a URL in your browser
+2. Enter a code
+3. Sign in with your Microsoft account
+
+The token is cached locally and refreshed automatically on subsequent runs.
