@@ -1,5 +1,6 @@
 """Fetch command - download newsletters from Outlook."""
 
+from datetime import datetime
 from typing import Optional
 
 import typer
@@ -25,6 +26,8 @@ from newsletter_archiver.storage.file_manager import (
 
 def app(
     days_back: int = typer.Option(7, "--days-back", "-d", help="Number of days back to fetch"),
+    from_date: Optional[str] = typer.Option(None, "--from", help="Start date (YYYY-MM-DD). Overrides --days-back."),
+    to_date: Optional[str] = typer.Option(None, "--to", help="End date (YYYY-MM-DD). Defaults to today."),
     sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender email or domain"),
     scan: bool = typer.Option(False, "--scan", help="Scan for new newsletter senders without archiving"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be filtered out without archiving or queuing"),
@@ -33,6 +36,7 @@ def app(
     """Fetch newsletters from Outlook and archive them.
 
     By default, only archives emails from approved senders.
+    Use --from/--to for a date range (e.g. --from 2025-06-01 --to 2025-12-31).
     Use --scan to discover new newsletter senders for review.
     Use --dry-run to audit the newsletter detection filter.
     Use --auto to archive everything without queuing for review.
@@ -60,7 +64,29 @@ def app(
             raise typer.Exit(1)
 
     rprint(f"[green]✓[/green] Authenticated")
-    rprint(f"Fetching emails from the last [bold]{days_back}[/bold] days...")
+
+    # Parse date range
+    parsed_from = None
+    parsed_to = None
+    if from_date:
+        try:
+            parsed_from = datetime.strptime(from_date, "%Y-%m-%d")
+        except ValueError:
+            rprint(f"[red]Invalid --from date:[/red] {from_date}. Use YYYY-MM-DD format.")
+            raise typer.Exit(1)
+    if to_date:
+        try:
+            parsed_to = datetime.strptime(to_date, "%Y-%m-%d")
+        except ValueError:
+            rprint(f"[red]Invalid --to date:[/red] {to_date}. Use YYYY-MM-DD format.")
+            raise typer.Exit(1)
+
+    if parsed_from:
+        desc = f"Fetching emails from [bold]{from_date}[/bold]"
+        desc += f" to [bold]{to_date}[/bold]" if parsed_to else " to now"
+        rprint(desc)
+    else:
+        rprint(f"Fetching emails from the last [bold]{days_back}[/bold] days...")
     if sender:
         rprint(f"Filtering by sender: [bold]{sender}[/bold]")
 
@@ -68,6 +94,8 @@ def app(
     try:
         messages = client.fetch_emails(
             days_back=days_back,
+            since=parsed_from,
+            until=parsed_to,
             sender_filter=sender,
         )
     except FetchError as e:

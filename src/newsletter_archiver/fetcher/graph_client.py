@@ -110,16 +110,31 @@ class GraphClient:
     def fetch_emails(
         self,
         days_back: int = 7,
+        since: Optional[datetime] = None,
+        until: Optional[datetime] = None,
         sender_filter: Optional[str] = None,
         batch_size: Optional[int] = None,
     ) -> list[dict]:
         """Fetch emails from Outlook inbox via Graph API.
 
+        Args:
+            days_back: Number of days back to fetch (used if since is None).
+            since: Start date (overrides days_back).
+            until: End date (defaults to now).
+            sender_filter: Filter by sender email/domain.
+            batch_size: Number of results per page.
+
         Returns list of message dicts from the Graph API.
         """
-        since = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if since:
+            since_str = since.strftime("%Y-%m-%dT%H:%M:%SZ")
+        else:
+            since_str = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-        filter_parts = [f"receivedDateTime ge {since}"]
+        filter_parts = [f"receivedDateTime ge {since_str}"]
+        if until:
+            until_str = until.strftime("%Y-%m-%dT23:59:59Z")
+            filter_parts.append(f"receivedDateTime le {until_str}")
         if sender_filter:
             filter_parts.append(
                 f"contains(from/emailAddress/address, '{sender_filter}')"
