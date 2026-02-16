@@ -291,7 +291,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                     html_content=parsed.html_body,
                 )
 
-                db.save_newsletter(
+                newsletter = db.save_newsletter(
                     message_id=parsed.message_id,
                     subject=parsed.subject,
                     sender_email=parsed.sender_email,
@@ -302,6 +302,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                     word_count=word_count,
                     reading_time_minutes=reading_time,
                 )
+                _auto_index(newsletter, str(md_path))
                 saved += 1
             else:
                 # Review mode: queue for individual approval
@@ -333,3 +334,22 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
         rprint(f"  New senders discovered: [yellow]{new_pending}[/yellow]")
         rprint(f"  Run [cyan]newsletter-archiver senders review[/cyan] to approve them.")
     rprint(f"  Total archived: [bold]{db.get_newsletter_count()}[/bold]")
+
+
+def _auto_index(newsletter, markdown_path: str) -> None:
+    """Auto-index a newly archived newsletter. Failures are silent."""
+    try:
+        from newsletter_archiver.search.indexer import SearchIndexer
+        indexer = SearchIndexer()
+        indexer.index_newsletter(
+            newsletter_id=newsletter.id,
+            subject=newsletter.subject,
+            sender_name=newsletter.sender_name or "",
+            markdown_path=markdown_path,
+            fts=True,
+            vector=True,
+        )
+        if indexer._vector is not None:
+            indexer.vector.save()
+    except Exception:
+        pass  # search indexing is best-effort

@@ -79,7 +79,7 @@ def app():
                 html_content=email.html_body,
             )
 
-            db.save_newsletter(
+            newsletter = db.save_newsletter(
                 message_id=email.message_id,
                 subject=email.subject,
                 sender_email=email.sender_email,
@@ -90,6 +90,21 @@ def app():
                 word_count=word_count,
                 reading_time_minutes=reading_time,
             )
+
+            # Auto-index for search
+            try:
+                from newsletter_archiver.search.indexer import SearchIndexer
+                indexer = SearchIndexer()
+                indexer.index_newsletter(
+                    newsletter_id=newsletter.id,
+                    subject=newsletter.subject,
+                    sender_name=newsletter.sender_name or "",
+                    markdown_path=str(md_path),
+                )
+                if indexer._vector is not None:
+                    indexer.vector.save()
+            except Exception:
+                pass  # search indexing is best-effort
 
             db.delete_pending_email(email.id)
             approved += 1

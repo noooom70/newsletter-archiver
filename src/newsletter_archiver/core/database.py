@@ -57,6 +57,15 @@ class Sender(Base):
         return f"<Sender {self.email} ({self.status})>"
 
 
+class EmbeddingChunk(Base):
+    __tablename__ = "embedding_chunks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    newsletter_id = Column(Integer, nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    chunk_text = Column(Text, nullable=False)
+
+
 class PendingEmail(Base):
     __tablename__ = "pending_emails"
 
@@ -82,6 +91,19 @@ def create_tables(db_url: str) -> None:
     engine = get_engine(db_url)
     Base.metadata.create_all(engine)
     _migrate(engine)
+    _create_fts_table(engine)
+
+
+def _create_fts_table(engine) -> None:
+    """Create FTS5 virtual table if it doesn't exist (raw SQL — not supported by SQLAlchemy DDL)."""
+    with engine.begin() as conn:
+        conn.execute(text("""
+            CREATE VIRTUAL TABLE IF NOT EXISTS newsletters_fts USING fts5(
+                subject, content, sender_name,
+                newsletter_id UNINDEXED,
+                tokenize='porter unicode61'
+            )
+        """))
 
 
 def _migrate(engine) -> None:
