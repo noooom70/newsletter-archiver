@@ -19,7 +19,13 @@ def slugify(text: str, max_length: int = 80) -> str:
 
 
 def get_sender_dirname(sender_name: str, sender_email: str) -> str:
-    """Create a directory name from sender info."""
+    """Create a directory name from sender info.
+
+    Checks publications mapping first; falls back to slugified sender name.
+    """
+    publications = get_settings().load_publications()
+    if sender_email in publications:
+        return slugify(publications[sender_email])
     name = sender_name or sender_email.split("@")[0]
     return slugify(name)
 

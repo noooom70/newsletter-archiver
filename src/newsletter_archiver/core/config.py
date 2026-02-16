@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Optional
 
+import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -49,6 +50,21 @@ class Settings(BaseSettings):
     @property
     def token_path(self) -> Path:
         return self.local_dir / "msal_token_cache.json"
+
+    @property
+    def publications_path(self) -> Path:
+        return self.local_dir / "publications.yaml"
+
+    def load_publications(self) -> dict[str, str]:
+        """Load email → publication name mapping from YAML file.
+
+        Returns empty dict if file doesn't exist.
+        """
+        if not self.publications_path.exists():
+            return {}
+        with open(self.publications_path) as f:
+            data = yaml.safe_load(f)
+        return data if isinstance(data, dict) else {}
 
     @property
     def is_configured(self) -> bool:

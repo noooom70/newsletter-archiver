@@ -53,10 +53,28 @@ def clean_html(html: str) -> str:
     return str(soup)
 
 
+def strip_invisible_chars(text: str) -> str:
+    """Remove invisible Unicode characters used as email preheader padding.
+
+    Common offenders: zero-width spaces, soft hyphens, combining grapheme
+    joiners, and other zero-width/formatting characters.
+    """
+    # U+00AD soft hyphen, U+034F combining grapheme joiner,
+    # U+200B-U+200F zero-width spaces/joiners, U+2060-U+2064 word joiners,
+    # U+FEFF byte order mark
+    text = re.sub(r"[\u00ad\u034f\u200b-\u200f\u2060-\u2064\ufeff]", "", text)
+    # Collapse runs of whitespace left behind
+    text = re.sub(r"[ \t]{2,}", " ", text)
+    return text
+
+
 def html_to_markdown(html: str) -> str:
     """Convert cleaned HTML to Markdown."""
     cleaned = clean_html(html)
     md = markdownify(cleaned, heading_style="ATX", strip=["img"])
+
+    # Strip invisible email preheader padding
+    md = strip_invisible_chars(md)
 
     # Clean up excessive whitespace
     md = re.sub(r"\n{3,}", "\n\n", md)

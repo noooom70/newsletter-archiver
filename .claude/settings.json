@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git init:*)",
+      "WebSearch",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python3 -m pip install:*)",
+      "Bash(sudo apt-get update:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(export PATH=\"$HOME/.local/bin:$PATH\")",
+      "Bash(poetry --version:*)",
+      "Bash(poetry install:*)",
+      "Bash(poetry run pytest:*)",
+      "Bash(poetry run:*)",
+      "Bash(poetry lock:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(gh repo view:*)",
+      "Bash(find:*)",
+      "Bash(git checkout:*)",
+      "Bash(poetry add:*)",
+      "Bash(sqlite3:*)",
+      "Bash(python3:*)",
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr edit:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

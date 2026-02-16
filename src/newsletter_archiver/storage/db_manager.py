@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from newsletter_archiver.core.config import get_settings
 from newsletter_archiver.core.database import (
+    EmbeddingChunk,
     Newsletter,
     PendingEmail,
     Sender,
@@ -239,6 +240,29 @@ class DatabaseManager:
         finally:
             session.close()
 
+    # --- Newsletter query operations ---
+
+    def get_all_newsletters(self) -> list[Newsletter]:
+        """Get all newsletters ordered by received date."""
+        session = self._session()
+        try:
+            results = session.execute(
+                select(Newsletter).order_by(Newsletter.received_date.desc())
+            ).scalars().all()
+            return list(results)
+        finally:
+            session.close()
+
+    def get_newsletter_by_id(self, newsletter_id: int) -> Optional[Newsletter]:
+        """Get a newsletter by its primary key ID."""
+        session = self._session()
+        try:
+            return session.execute(
+                select(Newsletter).where(Newsletter.id == newsletter_id)
+            ).scalar_one_or_none()
+        finally:
+            session.close()
+
     # --- Pending email operations ---
 
     def save_pending_email(
@@ -319,5 +343,71 @@ class DatabaseManager:
         except Exception:
             session.rollback()
             raise
+        finally:
+            session.close()
+
+    # --- Embedding chunk operations ---
+
+    def save_embedding_chunks(self, newsletter_id: int, chunks: list[str]) -> None:
+        """Save text chunks for a newsletter's embeddings."""
+        session = self._session()
+        try:
+            # Delete existing chunks for this newsletter
+            existing = session.execute(
+                select(EmbeddingChunk).where(EmbeddingChunk.newsletter_id == newsletter_id)
+            ).scalars().all()
+            for chunk in existing:
+                session.delete(chunk)
+
+            for i, text in enumerate(chunks):
+                session.add(EmbeddingChunk(
+                    newsletter_id=newsletter_id,
+                    chunk_index=i,
+                    chunk_text=text,
+                ))
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def get_embedding_chunks(self, newsletter_id: int) -> list[EmbeddingChunk]:
+        """Get all text chunks for a newsletter, ordered by index."""
+        session = self._session()
+        try:
+            results = session.execute(
+                select(EmbeddingChunk)
+                .where(EmbeddingChunk.newsletter_id == newsletter_id)
+                .order_by(EmbeddingChunk.chunk_index)
+            ).scalars().all()
+            return list(results)
+        finally:
+            session.close()
+
+    def delete_embedding_chunks(self, newsletter_id: int) -> None:
+        """Delete all embedding chunks for a newsletter."""
+        session = self._session()
+        try:
+            chunks = session.execute(
+                select(EmbeddingChunk).where(EmbeddingChunk.newsletter_id == newsletter_id)
+            ).scalars().all()
+            for chunk in chunks:
+                session.delete(chunk)
+            session.commit()
+        except Exception:
+            session.rollback()
+            raise
+        finally:
+            session.close()
+
+    def get_newsletter_ids_with_chunks(self) -> set[int]:
+        """Get set of newsletter IDs that have embedding chunks stored."""
+        session = self._session()
+        try:
+            results = session.execute(
+                select(EmbeddingChunk.newsletter_id).distinct()
+            ).scalars().all()
+            return set(results)
         finally:
             session.close()

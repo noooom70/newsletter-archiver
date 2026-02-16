@@ -11,6 +11,9 @@ A CLI tool that fetches email newsletters from Outlook via the Microsoft Graph A
 - Filters out transactional emails (receipts, confirmations, renewal notices)
 - Deduplication: safe to re-run without creating duplicates
 - Date range support for backfilling archives
+- **Full-text keyword search** via SQLite FTS5 (porter stemming, ranked snippets)
+- **Semantic search** via sentence-transformers (local, no API key needed)
+- Auto-indexes new newsletters on fetch and review approval
 
 ## Installation
 
@@ -120,6 +123,61 @@ poetry run newsletter-archiver senders remove user@example.com
 poetry run newsletter-archiver senders set-mode user@example.com auto
 ```
 
+### search
+
+Search your archived newsletters.
+
+```bash
+# Keyword search (supports FTS5 syntax: phrases, AND, OR, NOT)
+poetry run newsletter-archiver search keyword "TSMC"
+poetry run newsletter-archiver search keyword '"artificial intelligence" AND business'
+
+# Semantic search (meaning-based, uses sentence-transformers locally)
+poetry run newsletter-archiver search semantic "how AI changes business models"
+```
+
+| Option | Description |
+|--------|-------------|
+| `-n`, `--limit` | Maximum results to return (default: 20) |
+| `-s`, `--sender` | Filter by sender name |
+
+### index
+
+Build and manage search indexes.
+
+```bash
+# Build both FTS and vector indexes
+poetry run newsletter-archiver index build
+
+# Rebuild from scratch
+poetry run newsletter-archiver index build --reindex
+
+# Build only one type
+poetry run newsletter-archiver index build --fts-only
+poetry run newsletter-archiver index build --vector-only
+
+# Check indexing status
+poetry run newsletter-archiver index status
+```
+
+New newsletters are auto-indexed when archived via `fetch` or `review`. Use `index build` to index existing newsletters or to rebuild after any issues.
+
+### archive
+
+Manage archive directory structure and file hygiene.
+
+```bash
+# Preview directory renames based on publications.yaml mapping
+poetry run newsletter-archiver archive migrate --dry-run
+
+# Execute the migration (moves files, updates DB paths, cleans empty dirs)
+poetry run newsletter-archiver archive migrate
+
+# Strip invisible Unicode padding from existing markdown files
+poetry run newsletter-archiver archive clean --dry-run
+poetry run newsletter-archiver archive clean
+```
+
 ### review
 
 Approve or deny individual queued emails (from review-mode senders).
@@ -142,10 +200,22 @@ Newsletters are saved as both Markdown and HTML:
 archives/
   2025/
     06/
-      sender-name/
+      stratechery/
         2025-06-15_article-title.md
         2025-06-15_article-title.html
+      the-economist/
+        2025-06-15_article-title.md
 ```
+
+Directory names are determined by a **publications mapping** (`~/.newsletter-archive/publications.yaml`) that maps sender emails to publication names:
+
+```yaml
+email@stratechery.com: Stratechery
+newsletters@e.economist.com: The Economist
+noreply@e.economist.com: The Economist
+```
+
+Multiple sender emails can map to the same publication, so all emails land in one directory regardless of which address sent them. If a sender isn't in the mapping, the directory falls back to a slugified version of the sender name.
 
 The Markdown files include YAML frontmatter with metadata (title, sender, date, word count, reading time).
 
