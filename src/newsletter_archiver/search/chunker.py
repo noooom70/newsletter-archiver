@@ -2,6 +2,8 @@
 
 import re
 
+from newsletter_archiver.fetcher.content_extractor import strip_invisible_chars
+
 
 def strip_frontmatter(markdown: str) -> str:
     """Remove YAML frontmatter (--- delimited block at start of file)."""
@@ -11,6 +13,8 @@ def strip_frontmatter(markdown: str) -> str:
 def clean_for_indexing(markdown: str) -> str:
     """Strip frontmatter, URLs, and excess whitespace for indexing."""
     text = strip_frontmatter(markdown)
+    # Remove invisible email preheader padding
+    text = strip_invisible_chars(text)
     # Remove URLs
     text = re.sub(r"https?://\S+", "", text)
     # Remove markdown image/link syntax remnants
