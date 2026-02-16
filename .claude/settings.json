@@ -23,7 +23,9 @@
       "Bash(poetry add:*)",
       "Bash(sqlite3:*)",
       "Bash(python3:*)",
-      "Bash(gh pr create:*)"
+      "Bash(gh pr create:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr edit:*)"
     ],
     "deny": [],
     "ask": []
