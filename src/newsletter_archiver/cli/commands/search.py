@@ -1,8 +1,9 @@
-"""Search command - keyword and semantic search over archived newsletters."""
+"""Search command - keyword, semantic, and RAG Q&A search over archived newsletters."""
 
 from typing import Optional
 
 import typer
+from rich.console import Console
 from rich import print as rprint
 from rich.table import Table
 
@@ -53,9 +54,49 @@ def keyword(
 
 
 @app.command()
+def ask(
+    query: str = typer.Argument(help="Question to answer using your newsletter archive"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Number of chunks to retrieve"),
+    sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender name"),
+    model: Optional[str] = typer.Option(None, "--model", "-m", help="Override Claude model"),
+):
+    """Ask a question and get an AI-generated answer grounded in your archive."""
+    settings = get_settings()
+    settings.ensure_dirs()
+
+    from newsletter_archiver.search.rag import ask as rag_ask
+    from newsletter_archiver.storage.db_manager import DatabaseManager
+
+    console = Console()
+    db = DatabaseManager()
+
+    console.print("[dim]Searching archive and generating answer...[/dim]\n")
+
+    try:
+        result = rag_ask(query, db, top_k=limit, sender=sender, model=model)
+    except RuntimeError as e:
+        rprint(f"[red]{e}[/red]")
+        raise typer.Exit(1)
+
+    if result.stream is None:
+        rprint("[yellow]No relevant content found in the archive.[/yellow]")
+        return
+
+    # Stream the response
+    for chunk in result.stream:
+        console.print(chunk, end="", highlight=False)
+    console.print()  # final newline
+
+    # Print sources
+    if result.sources:
+        console.print("\n[bold]Sources:[/bold]")
+        for src in result.sources:
+            console.print(f"  - {src['subject']} — {src['sender_name']} ({src['date']})")
+
+@app.command()
 def semantic(
     query: str = typer.Argument(help="Natural language search query"),
-    limit: int = typer.Option(20, "--limit", "-n", help="Maximum results to return"),
+    limit: int = typer.Option(10, "--limit", "-n", help="Maximum results to return"),
     sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender name"),
 ):
     """Search newsletters by meaning using vector similarity."""

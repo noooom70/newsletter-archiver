@@ -13,6 +13,7 @@ A CLI tool that fetches email newsletters from Outlook via the Microsoft Graph A
 - Date range support for backfilling archives
 - **Full-text keyword search** via SQLite FTS5 (porter stemming, ranked snippets)
 - **Semantic search** via sentence-transformers (local, no API key needed)
+- **RAG Q&A** — ask natural language questions and get AI-generated answers grounded in your archive (via Claude API)
 - Auto-indexes new newsletters on fetch and review approval
 
 ## Installation
@@ -134,12 +135,29 @@ poetry run newsletter-archiver search keyword '"artificial intelligence" AND bus
 
 # Semantic search (meaning-based, uses sentence-transformers locally)
 poetry run newsletter-archiver search semantic "how AI changes business models"
+
+# RAG Q&A (ask a question, get an answer with citations via Claude)
+poetry run newsletter-archiver search ask "What has Ben Thompson written about TSMC?"
+poetry run newsletter-archiver search ask "how do AI labs make money?" --sender "The Diff"
+poetry run newsletter-archiver search ask "summarize the Economist's coverage of Iran" --model claude-haiku-4-5-20251001
 ```
+
+Keyword and semantic search options:
 
 | Option | Description |
 |--------|-------------|
-| `-n`, `--limit` | Maximum results to return (default: 20) |
+| `-n`, `--limit` | Maximum results to return (default: 10) |
 | `-s`, `--sender` | Filter by sender name |
+
+`search ask` options:
+
+| Option | Description |
+|--------|-------------|
+| `-n`, `--limit` | Number of chunks to retrieve (default: 10) |
+| `-s`, `--sender` | Filter by sender name |
+| `-m`, `--model` | Override Claude model (default: claude-sonnet-4-5-20250929) |
+
+The `ask` command requires an `ANTHROPIC_API_KEY` environment variable (or set in `.env`).
 
 ### index
 

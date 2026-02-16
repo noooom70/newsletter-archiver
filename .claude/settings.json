@@ -25,7 +25,9 @@
       "Bash(python3:*)",
       "Bash(gh pr create:*)",
       "Bash(gh pr view:*)",
-      "Bash(gh pr edit:*)"
+      "Bash(gh pr edit:*)",
+      "Bash(git pull:*)",
+      "Bash(git branch:*)"
     ],
     "deny": [],
     "ask": []
