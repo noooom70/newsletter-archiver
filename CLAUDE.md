@@ -4,7 +4,8 @@
 - Default branch: `master` (not main)
 - Use feature branches for new work, PR back into master
 - Commit messages: short summary line, detail in body
-- Always update README before finalizing a PR
+- Before creating a PR, verify README.md is up to date with any new/changed commands or features
+- Before creating a PR, verify `.claude/settings.json` has any new permissions needed
 
 ## Project Structure
 - **Source code**: `src/newsletter_archiver/`

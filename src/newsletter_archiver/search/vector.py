@@ -22,6 +22,17 @@ class VectorResult:
     snippet: str
 
 
+@dataclass
+class ChunkResult:
+    newsletter_id: int
+    chunk_index: int
+    subject: str
+    sender_name: str
+    date: str
+    score: float
+    chunk_text: str
+
+
 class VectorSearchManager:
     def __init__(self):
         settings = get_settings()
@@ -97,7 +108,7 @@ class VectorSearchManager:
         self._embeddings = None
         self._chunk_ids = []
 
-    def search(self, query: str, db_manager, top_k: int = 20,
+    def search(self, query: str, db_manager, top_k: int = 10,
                sender: str | None = None) -> list[VectorResult]:
         """Find newsletters most similar to the query."""
         if self._embeddings is None or len(self._chunk_ids) == 0:
@@ -143,6 +154,61 @@ class VectorSearchManager:
                 date=date_str,
                 score=float(similarities[idx]),
                 snippet=snippet,
+            ))
+
+            if len(results) >= top_k:
+                break
+
+        return results
+
+    def search_chunks(self, query: str, db_manager, top_k: int = 10,
+                       sender: str | None = None) -> list[ChunkResult]:
+        """Find individual chunks most similar to the query (no deduplication).
+
+        Returns full chunk text, suitable for RAG retrieval.
+        """
+        if self._embeddings is None or len(self._chunk_ids) == 0:
+            return []
+
+        query_embedding = self.embed_texts([query])[0]
+        similarities = np.dot(self._embeddings, query_embedding)
+        top_indices = np.argsort(similarities)[::-1]
+
+        # Cache newsletter lookups and chunk texts
+        nl_cache: dict[int, object] = {}
+        chunk_cache: dict[int, list] = {}
+        results = []
+
+        for idx in top_indices:
+            nid, chunk_idx = self._chunk_ids[idx]
+
+            if nid not in nl_cache:
+                nl_cache[nid] = db_manager.get_newsletter_by_id(nid)
+            newsletter = nl_cache[nid]
+            if newsletter is None:
+                continue
+
+            if sender and sender.lower() not in (newsletter.sender_name or "").lower():
+                continue
+
+            if nid not in chunk_cache:
+                chunk_cache[nid] = db_manager.get_embedding_chunks(nid)
+
+            chunk_text = ""
+            for c in chunk_cache[nid]:
+                if c.chunk_index == chunk_idx:
+                    chunk_text = c.chunk_text
+                    break
+
+            date_str = newsletter.received_date.strftime("%Y-%m-%d") if newsletter.received_date else ""
+            results.append(ChunkResult(
+                newsletter_id=nid,
+                chunk_index=chunk_idx,
+                subject=newsletter.subject,
+                sender_name=newsletter.sender_name or "",
+                date=date_str,
+                score=float(similarities[idx]),
+                chunk_text=chunk_text,
             ))
 
             if len(results) >= top_k:

@@ -31,6 +31,10 @@ class Settings(BaseSettings):
         default_factory=lambda: Path.home() / ".newsletter-archive"
     )
 
+    # Anthropic API (for RAG Q&A)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-4-5-20250929"
+
     # Fetching defaults
     default_days_back: int = 7
     batch_size: int = 100
