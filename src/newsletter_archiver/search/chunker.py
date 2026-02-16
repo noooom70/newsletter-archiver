@@ -16,6 +16,16 @@ def clean_for_indexing(markdown: str) -> str:
     # Remove markdown image/link syntax remnants
     text = re.sub(r"!\[([^\]]*)\]\([^)]*\)", r"\1", text)
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
+    # Remove markdown table formatting (rows of |, ---, and cells)
+    text = re.sub(r"^\|[\s\|\-]+\|$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"\|", " ", text)
+    # Remove markdown heading markers
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    # Remove bold/italic markers
+    text = re.sub(r"\*{1,3}(.*?)\*{1,3}", r"\1", text)
+    # Remove horizontal rules and leftover --- separators
+    text = re.sub(r"^[\s\-]+$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"(?:---\s*){2,}", "", text)
     # Collapse whitespace
     text = re.sub(r"\n{3,}", "\n\n", text)
     text = re.sub(r"[ \t]+", " ", text)

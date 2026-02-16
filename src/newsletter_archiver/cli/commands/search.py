@@ -22,9 +22,11 @@ def keyword(
     settings.ensure_dirs()
 
     from newsletter_archiver.search.fts import FTSManager
+    from newsletter_archiver.storage.db_manager import DatabaseManager
 
     fts = FTSManager(settings.db_path)
     fts.ensure_table()
+    db = DatabaseManager()
 
     results = fts.search(query, limit=limit, sender=sender)
 
@@ -34,6 +36,7 @@ def keyword(
 
     table = Table(title=f"Results for: {query}", show_lines=True)
     table.add_column("#", style="dim", width=3)
+    table.add_column("Date", width=10)
     table.add_column("Subject", style="bold", max_width=50)
     table.add_column("Sender", max_width=25)
     table.add_column("Snippet", max_width=60)
@@ -41,7 +44,9 @@ def keyword(
     for i, r in enumerate(results, 1):
         # Format snippet: highlight matches between >>> and <<<
         snippet = r.snippet.replace(">>>", "[bold yellow]").replace("<<<", "[/bold yellow]")
-        table.add_row(str(i), r.subject, r.sender_name, snippet)
+        nl = db.get_newsletter_by_id(r.newsletter_id)
+        date_str = nl.received_date.strftime("%Y-%m-%d") if nl and nl.received_date else ""
+        table.add_row(str(i), date_str, r.subject, r.sender_name, snippet)
 
     rprint(table)
     rprint(f"\n[dim]{len(results)} result(s)[/dim]")
@@ -72,13 +77,14 @@ def semantic(
 
     table = Table(title=f"Semantic results for: {query}", show_lines=True)
     table.add_column("#", style="dim", width=3)
+    table.add_column("Date", width=10)
     table.add_column("Subject", style="bold", max_width=50)
     table.add_column("Sender", max_width=25)
     table.add_column("Score", width=6)
     table.add_column("Snippet", max_width=60)
 
     for i, r in enumerate(results, 1):
-        table.add_row(str(i), r.subject, r.sender_name, f"{r.score:.3f}", r.snippet)
+        table.add_row(str(i), r.date, r.subject, r.sender_name, f"{r.score:.3f}", r.snippet)
 
     rprint(table)
     rprint(f"\n[dim]{len(results)} result(s)[/dim]")

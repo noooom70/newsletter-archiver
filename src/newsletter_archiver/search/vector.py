@@ -17,6 +17,7 @@ class VectorResult:
     newsletter_id: int
     subject: str
     sender_name: str
+    date: str
     score: float
     snippet: str
 
@@ -134,10 +135,12 @@ class VectorSearchManager:
                     snippet = c.chunk_text[:200]
                     break
 
+            date_str = newsletter.received_date.strftime("%Y-%m-%d") if newsletter.received_date else ""
             results.append(VectorResult(
                 newsletter_id=nid,
                 subject=newsletter.subject,
                 sender_name=newsletter.sender_name or "",
+                date=date_str,
                 score=float(similarities[idx]),
                 snippet=snippet,
             ))
