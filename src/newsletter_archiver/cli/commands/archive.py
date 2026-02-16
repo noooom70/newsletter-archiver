@@ -9,6 +9,7 @@ from rich import print as rprint
 
 from newsletter_archiver.core.config import get_settings
 from newsletter_archiver.core.database import Newsletter, get_session
+from newsletter_archiver.fetcher.content_extractor import strip_invisible_chars
 from newsletter_archiver.storage.file_manager import slugify
 
 app = typer.Typer(no_args_is_help=True)
@@ -106,6 +107,55 @@ def migrate(
         rprint(f"[bold]{label}: {moved}[/bold] newsletters, skipped: {skipped}, errors: {errors}")
         if dry_run and moved:
             rprint("\n[dim]Run without --dry-run to execute.[/dim]")
+
+    finally:
+        session.close()
+
+
+@app.command()
+def clean(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Preview changes without modifying files"),
+):
+    """Strip invisible Unicode padding from existing markdown files.
+
+    Rewrites .md files in-place to remove zero-width spaces, soft hyphens,
+    and other invisible characters left over from email preheader padding.
+    """
+    settings = get_settings()
+    session = get_session(settings.db_url)
+
+    try:
+        newsletters = session.query(Newsletter).all()
+        cleaned = 0
+        skipped = 0
+
+        for nl in newsletters:
+            if not nl.markdown_path:
+                continue
+
+            path = Path(nl.markdown_path)
+            if not path.exists():
+                continue
+
+            original = path.read_text(encoding="utf-8")
+            result = strip_invisible_chars(original)
+
+            if result == original:
+                skipped += 1
+                continue
+
+            if dry_run:
+                saved = len(original) - len(result)
+                rprint(f"  [green]{path.name}[/green] — {saved} chars removed")
+            else:
+                path.write_text(result, encoding="utf-8")
+
+            cleaned += 1
+
+        label = "Would clean" if dry_run else "Cleaned"
+        rprint(f"\n[bold]{label}: {cleaned}[/bold] files, skipped: {skipped} (already clean)")
+        if dry_run and cleaned:
+            rprint("[dim]Run without --dry-run to execute.[/dim]")
 
     finally:
         session.close()
