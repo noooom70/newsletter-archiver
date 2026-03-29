@@ -1,8 +1,8 @@
 """Microsoft Graph API authentication and email fetching via MSAL + REST."""
 
-import json
+import logging
+import time
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
 import msal
@@ -13,6 +13,10 @@ from newsletter_archiver.core.exceptions import AuthError, FetchError
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 SCOPES = ["Mail.Read"]
+MAX_RETRIES = 3
+DEFAULT_BACKOFF = 2.0  # seconds, doubled each retry
+
+logger = logging.getLogger(__name__)
 
 
 class GraphClient:
@@ -89,23 +93,50 @@ class GraphClient:
         except Exception as e:
             raise AuthError(f"Authentication failed: {e}") from e
 
-    def _graph_get(self, endpoint: str, params: Optional[dict] = None) -> dict:
-        """Make an authenticated GET request to Microsoft Graph."""
-        token = self._get_token()
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.get(f"{GRAPH_BASE}{endpoint}", headers=headers, params=params)
+    def _graph_get(self, endpoint_or_url: str, params: Optional[dict] = None) -> dict:
+        """Make an authenticated GET request to Microsoft Graph.
 
-        if resp.status_code == 401:
-            # Token might have expired mid-session, clear and retry
-            self._token = None
+        Handles 401 (token refresh), 429 (throttling), and 503 (transient)
+        with retries and Retry-After support per Microsoft best practices.
+        """
+        if endpoint_or_url.startswith("https://"):
+            url = endpoint_or_url
+            params = None
+        else:
+            url = f"{GRAPH_BASE}{endpoint_or_url}"
+
+        for attempt in range(MAX_RETRIES + 1):
             token = self._get_token()
             headers = {"Authorization": f"Bearer {token}"}
-            resp = requests.get(f"{GRAPH_BASE}{endpoint}", headers=headers, params=params)
+            resp = requests.get(url, headers=headers, params=params)
 
-        if not resp.ok:
+            if resp.ok:
+                return resp.json()
+
+            if resp.status_code == 401 and attempt == 0:
+                logger.info("Token expired, refreshing")
+                self._token = None
+                continue
+
+            if resp.status_code in (429, 503) and attempt < MAX_RETRIES:
+                retry_after = resp.headers.get("Retry-After")
+                try:
+                    delay = float(retry_after) if retry_after else None
+                except (ValueError, TypeError):
+                    delay = None
+                if delay is None:
+                    delay = DEFAULT_BACKOFF * (2 ** attempt)
+                logger.warning(
+                    "Graph API %d on attempt %d/%d, retrying in %.1fs",
+                    resp.status_code, attempt + 1, MAX_RETRIES, delay,
+                )
+                time.sleep(delay)
+                continue
+
             raise FetchError(f"Graph API error {resp.status_code}: {resp.text}")
 
-        return resp.json()
+        # Unreachable when MAX_RETRIES >= 0, but satisfies type checker
+        raise FetchError("Graph API request failed after retries")
 
     def fetch_emails(
         self,
@@ -152,17 +183,17 @@ class GraphClient:
             data = self._graph_get("/me/messages", params=params)
             messages.extend(data.get("value", []))
 
-            # Handle pagination
+            # Handle pagination — route through _graph_get for retry/auth handling
             while "@odata.nextLink" in data:
                 next_url = data["@odata.nextLink"]
-                token = self._get_token()
-                resp = requests.get(
-                    next_url,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                if not resp.ok:
+                try:
+                    data = self._graph_get(next_url)
+                except FetchError as e:
+                    logger.warning(
+                        "Pagination stopped early (%d messages fetched): %s",
+                        len(messages), e,
+                    )
                     break
-                data = resp.json()
                 messages.extend(data.get("value", []))
 
             return messages
