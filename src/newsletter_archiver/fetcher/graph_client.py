@@ -3,7 +3,6 @@
 import logging
 import time
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
 import msal
@@ -94,7 +93,7 @@ class GraphClient:
         except Exception as e:
             raise AuthError(f"Authentication failed: {e}") from e
 
-    def _graph_get(self, endpoint_or_url: str, params: dict | None = None) -> dict:
+    def _graph_get(self, endpoint_or_url: str, params: Optional[dict] = None) -> dict:
         """Make an authenticated GET request to Microsoft Graph.
 
         Handles 401 (token refresh), 429 (throttling), and 503 (transient)
@@ -121,9 +120,11 @@ class GraphClient:
 
             if resp.status_code in (429, 503) and attempt < MAX_RETRIES:
                 retry_after = resp.headers.get("Retry-After")
-                if retry_after:
-                    delay = float(retry_after)
-                else:
+                try:
+                    delay = float(retry_after) if retry_after else None
+                except (ValueError, TypeError):
+                    delay = None
+                if delay is None:
                     delay = DEFAULT_BACKOFF * (2 ** attempt)
                 logger.warning(
                     "Graph API %d on attempt %d/%d, retrying in %.1fs",

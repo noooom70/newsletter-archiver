@@ -29,7 +29,7 @@ def _mock_response(status_code, json_data=None, headers=None):
     return resp
 
 
-class TestRetryOn429:
+class TestGraphGetRetries:
     def test_retries_after_429_and_succeeds(self, client):
         """429 with Retry-After header should retry and succeed."""
         resp_429 = _mock_response(429, {"error": "throttled"}, {"Retry-After": "1"})
@@ -74,4 +74,5 @@ class TestRetryOn429:
              patch.object(client, "_get_token", return_value="new-token") as mock_token:
             result = client._graph_get("/me/messages")
             assert result == {"value": []}
-            assert client._token is None or mock_token.called
+            # Token should have been cleared and re-fetched
+            assert mock_token.call_count >= 2
