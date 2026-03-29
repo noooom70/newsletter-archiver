@@ -1,6 +1,5 @@
 """Microsoft Graph API authentication and email fetching via MSAL + REST."""
 
-import json
 import logging
 import time
 from datetime import UTC, datetime, timedelta
@@ -135,7 +134,8 @@ class GraphClient:
 
             raise FetchError(f"Graph API error {resp.status_code}: {resp.text}")
 
-        raise FetchError(f"Graph API error {resp.status_code}: {resp.text}")
+        # Unreachable when MAX_RETRIES >= 0, but satisfies type checker
+        raise FetchError("Graph API request failed after retries")
 
     def fetch_emails(
         self,

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from newsletter_archiver.core.exceptions import AuthError, FetchError
+from newsletter_archiver.core.exceptions import FetchError
 from newsletter_archiver.fetcher.graph_client import GraphClient
 
 
@@ -36,7 +36,7 @@ class TestRetryOn429:
         resp_200 = _mock_response(200, {"value": [{"id": "1"}]})
 
         with patch("newsletter_archiver.fetcher.graph_client.requests.get",
-                    side_effect=[resp_429, resp_200]) as mock_get, \
+                    side_effect=[resp_429, resp_200]), \
              patch("newsletter_archiver.fetcher.graph_client.time.sleep") as mock_sleep:
             result = client._graph_get("/me/messages")
             assert result == {"value": [{"id": "1"}]}
@@ -48,7 +48,7 @@ class TestRetryOn429:
         resp_200 = _mock_response(200, {"value": []})
 
         with patch("newsletter_archiver.fetcher.graph_client.requests.get",
-                    side_effect=[resp_503, resp_200]) as mock_get, \
+                    side_effect=[resp_503, resp_200]), \
              patch("newsletter_archiver.fetcher.graph_client.time.sleep") as mock_sleep:
             result = client._graph_get("/me/messages")
             assert result == {"value": []}
