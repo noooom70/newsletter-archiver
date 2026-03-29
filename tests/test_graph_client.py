@@ -92,14 +92,16 @@ class TestPagination:
             # Second call should use the full nextLink URL
             assert mock_graph.call_args_list[1][0][0] == "https://graph.microsoft.com/v1.0/me/messages?$skip=1"
 
-    def test_pagination_retries_on_429(self, client):
-        """429 during pagination should retry, not silently drop pages."""
+    def test_pagination_routes_through_graph_get(self, client):
+        """Pagination uses _graph_get (which has retry logic) for subsequent pages."""
         page1 = {"value": [{"id": "1"}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/messages?$skip=1"}
         page2 = {"value": [{"id": "2"}]}
 
-        with patch.object(client, "_graph_get", side_effect=[page1, page2]):
+        with patch.object(client, "_graph_get", side_effect=[page1, page2]) as mock_graph:
             result = client.fetch_emails(days_back=7)
             assert len(result) == 2
+            # Both calls should go through _graph_get (not raw requests.get)
+            assert mock_graph.call_count == 2
 
     def test_pagination_logs_warning_on_failure(self, client):
         """Unrecoverable error during pagination should log and return partial results."""
