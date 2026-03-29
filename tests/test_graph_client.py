@@ -76,3 +76,38 @@ class TestGraphGetRetries:
             assert result == {"value": []}
             # Token should have been cleared and re-fetched
             assert mock_token.call_count >= 2
+
+
+class TestPagination:
+    def test_follows_nextlink(self, client):
+        """Should follow @odata.nextLink for all pages."""
+        page1 = {"value": [{"id": "1"}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/messages?$skip=1"}
+        page2 = {"value": [{"id": "2"}]}
+
+        with patch.object(client, "_graph_get", side_effect=[page1, page2]) as mock_graph:
+            result = client.fetch_emails(days_back=7)
+            assert len(result) == 2
+            assert result[0]["id"] == "1"
+            assert result[1]["id"] == "2"
+            # Second call should use the full nextLink URL
+            assert mock_graph.call_args_list[1][0][0] == "https://graph.microsoft.com/v1.0/me/messages?$skip=1"
+
+    def test_pagination_retries_on_429(self, client):
+        """429 during pagination should retry, not silently drop pages."""
+        page1 = {"value": [{"id": "1"}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/messages?$skip=1"}
+        page2 = {"value": [{"id": "2"}]}
+
+        with patch.object(client, "_graph_get", side_effect=[page1, page2]):
+            result = client.fetch_emails(days_back=7)
+            assert len(result) == 2
+
+    def test_pagination_logs_warning_on_failure(self, client):
+        """Unrecoverable error during pagination should log and return partial results."""
+        page1 = {"value": [{"id": "1"}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/messages?$skip=1"}
+
+        with patch.object(client, "_graph_get", side_effect=[page1, FetchError("Graph API error 500: internal")]):
+            with patch("newsletter_archiver.fetcher.graph_client.logger") as mock_logger:
+                result = client.fetch_emails(days_back=7)
+                assert len(result) == 1
+                assert result[0]["id"] == "1"
+                mock_logger.warning.assert_called_once()

@@ -183,17 +183,17 @@ class GraphClient:
             data = self._graph_get("/me/messages", params=params)
             messages.extend(data.get("value", []))
 
-            # Handle pagination
+            # Handle pagination — route through _graph_get for retry/auth handling
             while "@odata.nextLink" in data:
                 next_url = data["@odata.nextLink"]
-                token = self._get_token()
-                resp = requests.get(
-                    next_url,
-                    headers={"Authorization": f"Bearer {token}"},
-                )
-                if not resp.ok:
+                try:
+                    data = self._graph_get(next_url)
+                except FetchError as e:
+                    logger.warning(
+                        "Pagination stopped early (%d messages fetched): %s",
+                        len(messages), e,
+                    )
                     break
-                data = resp.json()
                 messages.extend(data.get("value", []))
 
             return messages
