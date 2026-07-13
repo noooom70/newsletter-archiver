@@ -1,8 +1,7 @@
 """Shared test fixtures."""
 
+
 import pytest
-from pathlib import Path
-import tempfile
 
 from newsletter_archiver.core.config import Settings
 
@@ -22,6 +21,16 @@ def settings(tmp_archive):
         archive_dir=tmp_archive,
         local_dir=tmp_archive / "local",
     )
+
+
+@pytest.fixture
+def wired_settings(settings, monkeypatch):
+    """Make get_settings() everywhere return the temp-dir test settings."""
+    import newsletter_archiver.core.config as config
+
+    monkeypatch.setattr(config, "_settings", settings)
+    settings.ensure_dirs()
+    return settings
 
 
 @pytest.fixture

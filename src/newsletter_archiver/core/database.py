@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     Float,
@@ -82,28 +81,26 @@ class PendingEmail(Base):
         return f"<PendingEmail {self.subject!r} from {self.sender_email}>"
 
 
+# One engine (and connection pool) per database URL for the process lifetime
+_engines: dict[str, object] = {}
+
+
 def get_engine(db_url: str):
-    return create_engine(db_url, echo=False)
+    engine = _engines.get(db_url)
+    if engine is None:
+        engine = create_engine(db_url, echo=False)
+        _engines[db_url] = engine
+    return engine
 
 
 def create_tables(db_url: str) -> None:
-    """Create all tables if they don't exist, and migrate schema."""
+    """Create all tables if they don't exist, and migrate schema.
+
+    The FTS5 virtual table is owned by search.fts.FTSManager, not created here.
+    """
     engine = get_engine(db_url)
     Base.metadata.create_all(engine)
     _migrate(engine)
-    _create_fts_table(engine)
-
-
-def _create_fts_table(engine) -> None:
-    """Create FTS5 virtual table if it doesn't exist (raw SQL — not supported by SQLAlchemy DDL)."""
-    with engine.begin() as conn:
-        conn.execute(text("""
-            CREATE VIRTUAL TABLE IF NOT EXISTS newsletters_fts USING fts5(
-                subject, content, sender_name,
-                newsletter_id UNINDEXED,
-                tokenize='porter unicode61'
-            )
-        """))
 
 
 def _migrate(engine) -> None:

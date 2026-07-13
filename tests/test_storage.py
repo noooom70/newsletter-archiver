@@ -2,13 +2,13 @@
 
 from datetime import datetime
 
+from newsletter_archiver.storage.db_manager import DatabaseManager
 from newsletter_archiver.storage.file_manager import (
     get_archive_path,
     get_sender_dirname,
     save_newsletter_files,
     slugify,
 )
-from newsletter_archiver.storage.db_manager import DatabaseManager
 
 
 def test_slugify():

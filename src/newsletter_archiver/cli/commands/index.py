@@ -60,4 +60,4 @@ def status():
         vector_count = len(vm.get_indexed_ids(db))
         rprint(f"  Vector indexed:    [bold]{vector_count}[/bold]")
     except Exception:
-        rprint(f"  Vector indexed:    [dim]not available[/dim]")
+        rprint("  Vector indexed:    [dim]not available[/dim]")

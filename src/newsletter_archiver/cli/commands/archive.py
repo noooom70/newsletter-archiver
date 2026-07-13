@@ -58,7 +58,6 @@ def migrate(
             year = nl.received_date.strftime("%Y")
             month = nl.received_date.strftime("%m")
 
-            old_sender_dir = archives_dir / year / month / old_dirname
             new_sender_dir = archives_dir / year / month / new_dirname
 
             # Move individual files (md + html)

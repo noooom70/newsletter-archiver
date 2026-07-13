@@ -1,6 +1,7 @@
 """Review command - approve or deny individual queued emails."""
 
-import typer
+import logging
+
 from rich import print as rprint
 from rich.prompt import Prompt
 
@@ -11,11 +12,14 @@ from newsletter_archiver.fetcher.content_extractor import (
     calculate_word_count,
     html_to_markdown,
 )
+from newsletter_archiver.search.indexer import SearchIndexer
 from newsletter_archiver.storage.db_manager import DatabaseManager
 from newsletter_archiver.storage.file_manager import (
     get_archive_path,
     save_newsletter_files,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def app():
@@ -35,6 +39,9 @@ def app():
         return
 
     rprint(f"\n[bold]{len(pending)} email(s) pending review:[/bold]\n")
+
+    # One indexer for the whole session; vector store persisted once at the end.
+    indexer = SearchIndexer(db=db)
 
     approved = 0
     denied = 0
@@ -91,34 +98,38 @@ def app():
                 reading_time_minutes=reading_time,
             )
 
-            # Auto-index for search
+            # Auto-index for search; failures are logged, not fatal
             try:
-                from newsletter_archiver.search.indexer import SearchIndexer
-                indexer = SearchIndexer()
                 indexer.index_newsletter(
                     newsletter_id=newsletter.id,
                     subject=newsletter.subject,
                     sender_name=newsletter.sender_name or "",
                     markdown_path=str(md_path),
                 )
-                if indexer._vector is not None:
-                    indexer.vector.save()
             except Exception:
-                pass  # search indexing is best-effort
+                logger.warning(
+                    "Failed to index newsletter %s (%r)",
+                    newsletter.id, newsletter.subject, exc_info=True,
+                )
 
             db.delete_pending_email(email.id)
             approved += 1
-            rprint(f"  [green]Archived[/green]")
+            rprint("  [green]Archived[/green]")
         elif choice == "d":
             db.delete_pending_email(email.id)
             denied += 1
-            rprint(f"  [red]Denied[/red]")
+            rprint("  [red]Denied[/red]")
         elif choice == "s":
-            rprint(f"  [dim]Skipped[/dim]")
+            rprint("  [dim]Skipped[/dim]")
         elif choice == "q":
             rprint("[dim]Review stopped.[/dim]")
             break
         rprint()
+
+    try:
+        indexer.save_vector()
+    except Exception:
+        logger.warning("Failed to persist vector index", exc_info=True)
 
     # Summary
     remaining = len(db.get_pending_emails())

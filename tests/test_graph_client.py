@@ -103,6 +103,15 @@ class TestPagination:
             # Both calls should go through _graph_get (not raw requests.get)
             assert mock_graph.call_count == 2
 
+    def test_sender_filter_quotes_escaped(self, client):
+        """Single quotes in the sender filter must be escaped per OData rules."""
+        page = {"value": []}
+
+        with patch.object(client, "_graph_get", return_value=page) as mock_graph:
+            client.fetch_emails(days_back=7, sender_filter="o'brien@example.com")
+            params = mock_graph.call_args[1]["params"]
+            assert "o''brien@example.com" in params["$filter"]
+
     def test_pagination_logs_warning_on_failure(self, client):
         """Unrecoverable error during pagination should log and return partial results."""
         page1 = {"value": [{"id": "1"}], "@odata.nextLink": "https://graph.microsoft.com/v1.0/me/messages?$skip=1"}

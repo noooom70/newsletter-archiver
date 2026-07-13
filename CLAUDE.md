@@ -36,4 +36,7 @@ poetry run newsletter-archiver index build --reindex
 
 # Run tests
 poetry run pytest
+
+# Lint (runs in CI alongside tests)
+poetry run ruff check .
 ```

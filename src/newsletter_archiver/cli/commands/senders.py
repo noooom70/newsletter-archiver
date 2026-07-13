@@ -52,9 +52,9 @@ def review():
             rprint(f"  [green]Approved[/green] (mode: {mode})")
         elif choice == "d":
             db.set_sender_status(sender.email, "denied")
-            rprint(f"  [red]Denied[/red]")
+            rprint("  [red]Denied[/red]")
         elif choice == "s":
-            rprint(f"  [dim]Skipped (still pending)[/dim]")
+            rprint("  [dim]Skipped (still pending)[/dim]")
         elif choice == "q":
             rprint("[dim]Review stopped.[/dim]")
             break
@@ -67,7 +67,7 @@ def review():
     rprint(f"Senders: [green]{approved} approved[/green], [yellow]{pending_left} pending[/yellow], [red]{denied} denied[/red]")
 
     if approved:
-        rprint(f"\nRun [cyan]newsletter-archiver fetch[/cyan] to archive from approved senders.")
+        rprint("\nRun [cyan]newsletter-archiver fetch[/cyan] to archive from approved senders.")
 
 
 @app.command("list")

@@ -18,12 +18,12 @@ class Settings(BaseSettings):
     # Azure AD - defaults to Microsoft Graph CLI public client ID
     azure_client_id: str = "14d82eec-204b-4c2f-b7e8-296a70dab67e"
 
-    # Email
-    outlook_email: str = "dannewman70@outlook.com"
+    # Email account being archived (informational, shown in `config show`)
+    outlook_email: str = ""
 
-    # Archive files location (backed up via Proton Drive)
+    # Archive files location. Can be pointed at a cloud-synced drive for backup.
     archive_dir: Path = Field(
-        default_factory=lambda: Path("/mnt/c/Users/danne/Proton Drive/noomonics/My files/Projects/newsletter-archive")
+        default_factory=lambda: Path.home() / ".newsletter-archive"
     )
 
     # Local data directory (SQLite DB and auth tokens — not cloud-synced)
@@ -69,10 +69,6 @@ class Settings(BaseSettings):
         with open(self.publications_path) as f:
             data = yaml.safe_load(f)
         return data if isinstance(data, dict) else {}
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self.azure_client_id)
 
     def ensure_dirs(self) -> None:
         """Create all required directories."""

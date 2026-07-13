@@ -1,8 +1,7 @@
 """Parse email messages and detect newsletters."""
 
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Optional
+from datetime import UTC, datetime
 
 
 @dataclass
@@ -40,7 +39,7 @@ def parse_message(message: dict) -> ParsedEmail:
     try:
         received_date = datetime.fromisoformat(received_str.replace("Z", "+00:00"))
     except (ValueError, AttributeError):
-        received_date = datetime.utcnow()
+        received_date = datetime.now(UTC)
 
     # Extract headers into a dict
     raw_headers = message.get("internetMessageHeaders", []) or []

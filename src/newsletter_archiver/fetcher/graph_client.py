@@ -19,6 +19,18 @@ DEFAULT_BACKOFF = 2.0  # seconds, doubled each retry
 logger = logging.getLogger(__name__)
 
 
+def _to_utc(dt: datetime) -> datetime:
+    """Convert to UTC; naive datetimes are assumed to already be UTC."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
+def _utc_timestamp(dt: datetime) -> str:
+    """Format a datetime as a Graph API UTC timestamp."""
+    return _to_utc(dt).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 class GraphClient:
     def __init__(self):
         self.settings = get_settings()
@@ -157,18 +169,18 @@ class GraphClient:
 
         Returns list of message dicts from the Graph API.
         """
-        if since:
-            since_str = since.strftime("%Y-%m-%dT%H:%M:%SZ")
-        else:
-            since_str = (datetime.now(UTC) - timedelta(days=days_back)).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-        filter_parts = [f"receivedDateTime ge {since_str}"]
+        if since is None:
+            since = datetime.now(UTC) - timedelta(days=days_back)
+        filter_parts = [f"receivedDateTime ge {_utc_timestamp(since)}"]
         if until:
-            until_str = until.strftime("%Y-%m-%dT23:59:59Z")
+            # Date-only bound: include the whole end day
+            until_str = _to_utc(until).strftime("%Y-%m-%dT23:59:59Z")
             filter_parts.append(f"receivedDateTime le {until_str}")
         if sender_filter:
+            # Escape single quotes per OData string literal rules
+            escaped = sender_filter.replace("'", "''")
             filter_parts.append(
-                f"contains(from/emailAddress/address, '{sender_filter}')"
+                f"contains(from/emailAddress/address, '{escaped}')"
             )
 
         params = {

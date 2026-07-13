@@ -27,6 +27,11 @@ class SearchIndexer:
             self._vector = VectorSearchManager()
         return self._vector
 
+    def save_vector(self) -> None:
+        """Persist vector embeddings if the vector store was loaded."""
+        if self._vector is not None:
+            self._vector.save()
+
     def _read_markdown(self, markdown_path: str) -> str | None:
         """Read markdown file content, returning None if not found."""
         path = Path(markdown_path)
