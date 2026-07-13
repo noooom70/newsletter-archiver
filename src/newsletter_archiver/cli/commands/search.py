@@ -3,8 +3,8 @@
 from typing import Optional
 
 import typer
-from rich.console import Console
 from rich import print as rprint
+from rich.console import Console
 from rich.table import Table
 
 from newsletter_archiver.core.config import get_settings
@@ -29,7 +29,13 @@ def keyword(
     fts.ensure_table()
     db = DatabaseManager()
 
-    results = fts.search(query, limit=limit, sender=sender)
+    import sqlite3
+    try:
+        results = fts.search(query, limit=limit, sender=sender)
+    except sqlite3.OperationalError as e:
+        rprint(f"[red]Invalid search query:[/red] {e}")
+        rprint('[dim]FTS5 syntax: use quotes for phrases ("machine learning"), AND/OR/NOT for boolean logic.[/dim]')
+        raise typer.Exit(1)
 
     if not results:
         rprint(f"[yellow]No results for:[/yellow] {query}")

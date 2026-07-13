@@ -1,6 +1,7 @@
 """Fetch command - download newsletters from Outlook."""
 
-from datetime import datetime
+import logging
+from datetime import UTC, datetime
 from typing import Optional
 
 import typer
@@ -15,13 +16,19 @@ from newsletter_archiver.fetcher.content_extractor import (
     calculate_word_count,
     html_to_markdown,
 )
-from newsletter_archiver.fetcher.email_parser import _is_transactional_subject, parse_message
+from newsletter_archiver.fetcher.email_parser import (
+    _is_transactional_subject,
+    parse_message,
+)
 from newsletter_archiver.fetcher.graph_client import GraphClient
+from newsletter_archiver.search.indexer import SearchIndexer
 from newsletter_archiver.storage.db_manager import DatabaseManager
 from newsletter_archiver.storage.file_manager import (
     get_archive_path,
     save_newsletter_files,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def app(
@@ -44,11 +51,6 @@ def app(
     Use --auto to archive everything without queuing for review.
     """
     settings = get_settings()
-
-    if not settings.is_configured:
-        rprint("[red]Error:[/red] Not configured. Run: [cyan]newsletter-archiver config setup[/cyan]")
-        raise typer.Exit(1)
-
     settings.ensure_dirs()
     db = DatabaseManager()
     client = GraphClient()
@@ -65,7 +67,7 @@ def app(
             rprint(f"[red]Authentication failed:[/red] {e}")
             raise typer.Exit(1)
 
-    rprint(f"[green]✓[/green] Authenticated")
+    rprint("[green]✓[/green] Authenticated")
 
     # Handle --update: fetch from last archived email date
     parsed_from = None
@@ -79,13 +81,13 @@ def app(
             rprint("[yellow]No archived emails found. Using --days-back instead.[/yellow]")
     elif from_date:
         try:
-            parsed_from = datetime.strptime(from_date, "%Y-%m-%d")
+            parsed_from = datetime.strptime(from_date, "%Y-%m-%d").replace(tzinfo=UTC)
         except ValueError:
             rprint(f"[red]Invalid --from date:[/red] {from_date}. Use YYYY-MM-DD format.")
             raise typer.Exit(1)
     if to_date:
         try:
-            parsed_to = datetime.strptime(to_date, "%Y-%m-%d")
+            parsed_to = datetime.strptime(to_date, "%Y-%m-%d").replace(tzinfo=UTC)
         except ValueError:
             rprint(f"[red]Invalid --to date:[/red] {to_date}. Use YYYY-MM-DD format.")
             raise typer.Exit(1)
@@ -122,7 +124,7 @@ def app(
     if dry_run:
         _dry_run(messages, approved_senders)
     elif scan:
-        _scan_for_senders(messages, db, approved_senders)
+        _scan_for_senders(messages, db)
     else:
         _archive_approved(messages, db, approved_senders, force_auto=auto)
 
@@ -146,7 +148,7 @@ def _dry_run(messages: list, approved_senders: set[str]):
         for p in filtered:
             rprint(f"  [red]✗[/red] {p.sender_email}: {p.subject}")
     else:
-        rprint(f"\n[green]No emails filtered out.[/green]")
+        rprint("\n[green]No emails filtered out.[/green]")
 
     if accepted:
         rprint(f"\n[green bold]Would archive/queue ({len(accepted)}):[/green bold]")
@@ -157,7 +159,7 @@ def _dry_run(messages: list, approved_senders: set[str]):
            f"(accepted: {len(accepted)}, filtered: {len(filtered)})")
 
 
-def _scan_for_senders(messages: list, db: DatabaseManager, approved_senders: set[str]):
+def _scan_for_senders(messages: list, db: DatabaseManager):
     """Scan emails for newsletter senders and add as pending for review."""
     new_senders = 0
     known = 0
@@ -190,12 +192,12 @@ def _scan_for_senders(messages: list, db: DatabaseManager, approved_senders: set
             progress.advance(task)
 
     rprint()
-    rprint(f"[green]✓[/green] Scan complete!")
+    rprint("[green]✓[/green] Scan complete!")
     if new_senders:
         rprint(f"  New senders found: [bold yellow]{new_senders}[/bold yellow]")
-        rprint(f"  Run [cyan]newsletter-archiver senders review[/cyan] to approve or deny them.")
+        rprint("  Run [cyan]newsletter-archiver senders review[/cyan] to approve or deny them.")
     else:
-        rprint(f"  No new newsletter senders found.")
+        rprint("  No new newsletter senders found.")
     if known:
         rprint(f"  Already known: {known}")
 
@@ -215,6 +217,10 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
 
     # Build a set of auto-mode sender emails for fast lookup
     auto_senders = {s.email for s in db.get_senders_by_mode("auto")}
+
+    # One indexer for the whole run: the vector store is loaded lazily on
+    # first use and persisted once at the end, not per email.
+    indexer = SearchIndexer(db=db)
 
     saved = 0
     queued = 0
@@ -302,7 +308,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                     word_count=word_count,
                     reading_time_minutes=reading_time,
                 )
-                _auto_index(newsletter, str(md_path))
+                _auto_index(indexer, newsletter, str(md_path))
                 saved += 1
             else:
                 # Review mode: queue for individual approval
@@ -318,29 +324,32 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
 
             progress.advance(task)
 
+    try:
+        indexer.save_vector()
+    except Exception:
+        logger.warning("Failed to persist vector index", exc_info=True)
+
     # Summary
     rprint()
-    rprint(f"[green]✓[/green] Done!")
+    rprint("[green]✓[/green] Done!")
     if saved:
         rprint(f"  Archived: [bold green]{saved}[/bold green] newsletters")
     if queued:
         rprint(f"  Queued for review: [bold yellow]{queued}[/bold yellow]")
-        rprint(f"  Run [cyan]newsletter-archiver review[/cyan] to approve or deny them.")
+        rprint("  Run [cyan]newsletter-archiver review[/cyan] to approve or deny them.")
     if skipped:
         rprint(f"  Already archived/queued: [dim]{skipped}[/dim]")
     if not_approved:
         rprint(f"  Skipped (not approved): [dim]{not_approved}[/dim]")
     if new_pending:
         rprint(f"  New senders discovered: [yellow]{new_pending}[/yellow]")
-        rprint(f"  Run [cyan]newsletter-archiver senders review[/cyan] to approve them.")
+        rprint("  Run [cyan]newsletter-archiver senders review[/cyan] to approve them.")
     rprint(f"  Total archived: [bold]{db.get_newsletter_count()}[/bold]")
 
 
-def _auto_index(newsletter, markdown_path: str) -> None:
-    """Auto-index a newly archived newsletter. Failures are silent."""
+def _auto_index(indexer: SearchIndexer, newsletter, markdown_path: str) -> None:
+    """Auto-index a newly archived newsletter. Failures are logged, not fatal."""
     try:
-        from newsletter_archiver.search.indexer import SearchIndexer
-        indexer = SearchIndexer()
         indexer.index_newsletter(
             newsletter_id=newsletter.id,
             subject=newsletter.subject,
@@ -349,7 +358,8 @@ def _auto_index(newsletter, markdown_path: str) -> None:
             fts=True,
             vector=True,
         )
-        if indexer._vector is not None:
-            indexer.vector.save()
     except Exception:
-        pass  # search indexing is best-effort
+        logger.warning(
+            "Failed to index newsletter %s (%r)",
+            newsletter.id, newsletter.subject, exc_info=True,
+        )
