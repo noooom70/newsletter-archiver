@@ -1,13 +1,11 @@
 """Vector similarity search using sentence-transformers and NumPy."""
 
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 
 from newsletter_archiver.core.config import get_settings
-from newsletter_archiver.search.chunker import chunk_text, clean_for_indexing
-
+from newsletter_archiver.search.chunker import chunk_text
 
 MODEL_NAME = "all-MiniLM-L6-v2"
 

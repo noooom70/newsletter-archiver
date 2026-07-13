@@ -1,5 +1,7 @@
 # Newsletter Archiver
 
+[![CI](https://github.com/noooom70/newsletter-archiver/actions/workflows/ci.yml/badge.svg)](https://github.com/noooom70/newsletter-archiver/actions/workflows/ci.yml)
+
 A CLI tool that fetches email newsletters from Outlook via the Microsoft Graph API, converts them to Markdown, and archives them locally. Built for people who want a searchable, offline archive of their newsletter subscriptions.
 
 ## Features
@@ -241,8 +243,10 @@ The Markdown files include YAML frontmatter with metadata (title, sender, date, 
 
 The archive is split across two locations:
 
-- **Archive files** (Markdown + HTML): configurable, defaults to `~/.newsletter-archive/`. Can be placed on a cloud-synced drive for backup.
-- **Database + auth tokens**: `~/.newsletter-archive/` on the local filesystem. SQLite should not be placed on a cloud-synced drive to avoid corruption.
+- **Archive files** (Markdown + HTML): defaults to `~/.newsletter-archive/`, configurable via `ARCHIVE_DIR` in `.env`. Can be placed on a cloud-synced drive for backup.
+- **Database + auth tokens**: always `~/.newsletter-archive/` on the local filesystem. SQLite should not be placed on a cloud-synced drive to avoid corruption.
+
+Copy `.env.example` to `.env` to customize settings.
 
 ## Transactional Email Filtering
 
@@ -263,7 +267,12 @@ poetry run pytest
 
 # Run tests with verbose output
 poetry run pytest -v
+
+# Lint
+poetry run ruff check .
 ```
+
+Tests and lint run automatically in CI on every push and pull request.
 
 ## Authentication
 
@@ -274,3 +283,7 @@ Uses Microsoft's device code flow for authentication. On first run, you'll be pr
 3. Sign in with your Microsoft account
 
 The token is cached locally and refreshed automatically on subsequent runs.
+
+## License
+
+MIT — see [LICENSE](LICENSE).

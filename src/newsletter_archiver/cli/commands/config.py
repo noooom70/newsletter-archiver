@@ -1,6 +1,5 @@
 """Configuration management commands."""
 
-from pathlib import Path
 
 import typer
 from rich import print as rprint
