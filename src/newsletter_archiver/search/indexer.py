@@ -6,6 +6,7 @@ from rich import print as rprint
 from rich.progress import BarColumn, Progress, TextColumn
 
 from newsletter_archiver.core.config import get_settings
+from newsletter_archiver.search import optional_deps
 from newsletter_archiver.search.chunker import clean_for_indexing
 from newsletter_archiver.search.fts import FTSManager
 from newsletter_archiver.storage.db_manager import DatabaseManager
@@ -17,6 +18,7 @@ class SearchIndexer:
         settings = get_settings()
         self.fts = FTSManager(settings.db_path)
         self.fts.ensure_table()
+        self.vector_enabled = optional_deps.rag_available()
         self._vector = None  # lazy-loaded
 
     @property
@@ -61,10 +63,13 @@ class SearchIndexer:
     def index_newsletter(self, newsletter_id: int, subject: str,
                           sender_name: str, markdown_path: str,
                           fts: bool = True, vector: bool = True) -> None:
-        """Index a single newsletter in both FTS and vector stores."""
+        """Index a single newsletter in both FTS and vector stores.
+
+        The vector step is silently skipped when the 'rag' extra is not installed.
+        """
         if fts:
             self.index_newsletter_fts(newsletter_id, subject, sender_name, markdown_path)
-        if vector:
+        if vector and self.vector_enabled:
             self.index_newsletter_vector(newsletter_id, markdown_path)
 
     def index_all(self, reindex: bool = False, fts_only: bool = False,
@@ -75,8 +80,13 @@ class SearchIndexer:
             rprint("[yellow]No newsletters to index.[/yellow]")
             return (0, 0)
 
+        if not fts_only and not self.vector_enabled:
+            rprint("[dim]Vector indexing skipped: 'rag' extra not installed.[/dim]")
+            if vector_only:
+                return (0, 0)
+
         do_fts = not vector_only
-        do_vector = not fts_only
+        do_vector = not fts_only and self.vector_enabled
 
         if reindex and do_fts:
             self.fts.rebuild()
