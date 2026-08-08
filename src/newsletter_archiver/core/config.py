@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     default_days_back: int = 7
     batch_size: int = 100
 
+    # After archiving an email, mark it read and move it to the mailbox
+    # Archive folder so the inbox stays clean (TIDY_INBOX=true in .env).
+    # CLI --tidy/--no-tidy overrides per run.
+    tidy_inbox: bool = False
+
     @property
     def archives_dir(self) -> Path:
         return self.archive_dir / "archives"

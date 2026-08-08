@@ -17,6 +17,7 @@ A CLI tool that fetches email newsletters from Outlook via the Microsoft Graph A
 - **Semantic search** via sentence-transformers (local, no API key needed) — optional `rag` extra
 - **RAG Q&A** — ask natural language questions and get AI-generated answers grounded in your archive (via Claude API) — optional `rag` extra
 - Auto-indexes new newsletters on fetch and review approval
+- **Inbox tidy** (optional): archived emails are marked read and moved to the mailbox Archive folder, keeping your inbox clean
 - Markdown output with YAML frontmatter (`title`, `from`, `date`), ready for external RAG/vector-search pipelines to index
 
 ## Installation
@@ -99,6 +100,7 @@ newsletter-archiver fetch [OPTIONS]
 | `--scan` | Discover new newsletter senders without archiving |
 | `--auto` | Archive all emails immediately, ignoring sender mode |
 | `--dry-run` | Show what the transactional filter would skip |
+| `--tidy` / `--no-tidy` | Mark archived emails read + move them to the mailbox Archive folder (default: `TIDY_INBOX` setting) |
 
 Examples:
 
@@ -213,6 +215,22 @@ poetry run newsletter-archiver archive clean --dry-run
 poetry run newsletter-archiver archive clean
 ```
 
+### tidy
+
+Mark already-archived newsletters as read and move them to the mailbox Archive folder — a one-off (but re-runnable) sweep for emails archived before inbox tidying was enabled.
+
+```bash
+# See how many emails would be touched
+poetry run newsletter-archiver tidy --dry-run
+
+# Sweep the backlog
+poetry run newsletter-archiver tidy
+```
+
+Safe to re-run: already-tidied newsletters are skipped, and emails no longer present in the mailbox are marked done. To tidy automatically on every fetch, set `TIDY_INBOX=true` in `.env` (or pass `--tidy` per run).
+
+**Note:** tidying modifies your mailbox, so the app needs the `Mail.ReadWrite` scope instead of `Mail.Read`. The first run after upgrading prompts for the device-code sign-in once to grant it.
+
 ### review
 
 Approve or deny individual queued emails (from review-mode senders).
@@ -220,6 +238,8 @@ Approve or deny individual queued emails (from review-mode senders).
 ```bash
 poetry run newsletter-archiver review
 ```
+
+Approved emails are archived (and tidied in the mailbox when `TIDY_INBOX`/`--tidy` is on); denied emails are discarded from the queue but left untouched in your mailbox.
 
 For each email, choose:
 - **a** - approve (archive the email)

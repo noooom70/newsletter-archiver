@@ -12,7 +12,9 @@ from newsletter_archiver.core.config import get_settings
 from newsletter_archiver.core.exceptions import AuthError, FetchError
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-SCOPES = ["Mail.Read"]
+# ReadWrite is needed to mark messages read and move them to the Archive
+# folder; upgrading the scope triggers a one-time device-code re-consent.
+SCOPES = ["Mail.ReadWrite"]
 MAX_RETRIES = 3
 DEFAULT_BACKOFF = 2.0  # seconds, doubled each retry
 
@@ -106,10 +108,21 @@ class GraphClient:
             raise AuthError(f"Authentication failed: {e}") from e
 
     def _graph_get(self, endpoint_or_url: str, params: Optional[dict] = None) -> dict:
-        """Make an authenticated GET request to Microsoft Graph.
+        """Make an authenticated GET request to Microsoft Graph."""
+        return self._graph_request("get", endpoint_or_url, params=params)
+
+    def _graph_request(
+        self,
+        method: str,
+        endpoint_or_url: str,
+        params: Optional[dict] = None,
+        json: Optional[dict] = None,
+    ) -> dict:
+        """Make an authenticated request to Microsoft Graph.
 
         Handles 401 (token refresh), 429 (throttling), and 503 (transient)
         with retries and Retry-After support per Microsoft best practices.
+        Raises FetchError (with .status_code set) on non-retryable errors.
         """
         if endpoint_or_url.startswith("https://"):
             url = endpoint_or_url
@@ -120,10 +133,10 @@ class GraphClient:
         for attempt in range(MAX_RETRIES + 1):
             token = self._get_token()
             headers = {"Authorization": f"Bearer {token}"}
-            resp = requests.get(url, headers=headers, params=params)
+            resp = requests.request(method, url, headers=headers, params=params, json=json)
 
             if resp.ok:
-                return resp.json()
+                return resp.json() if resp.content else {}
 
             if resp.status_code == 401 and attempt == 0:
                 logger.info("Token expired, refreshing")
@@ -145,10 +158,37 @@ class GraphClient:
                 time.sleep(delay)
                 continue
 
-            raise FetchError(f"Graph API error {resp.status_code}: {resp.text}")
+            raise FetchError(
+                f"Graph API error {resp.status_code}: {resp.text}",
+                status_code=resp.status_code,
+            )
 
         # Unreachable when MAX_RETRIES >= 0, but satisfies type checker
         raise FetchError("Graph API request failed after retries")
+
+    def get_message(self, message_id: str, select: str = "internetMessageId") -> Optional[dict]:
+        """Fetch a single message, or None if it no longer exists (404)."""
+        try:
+            return self._graph_request("get", f"/me/messages/{message_id}", params={"$select": select})
+        except FetchError as e:
+            if e.status_code == 404:
+                return None
+            raise
+
+    def mark_read(self, message_id: str) -> None:
+        """Mark a message as read."""
+        self._graph_request("patch", f"/me/messages/{message_id}", json={"isRead": True})
+
+    def archive_message(self, message_id: str) -> str:
+        """Move a message to the well-known Archive folder.
+
+        Returns the message's new ID (moves change message IDs), or "" if
+        the response did not include one.
+        """
+        data = self._graph_request(
+            "post", f"/me/messages/{message_id}/move", json={"destinationId": "archive"},
+        )
+        return data.get("id", "")
 
     def fetch_emails(
         self,
@@ -187,7 +227,7 @@ class GraphClient:
             "$filter": " and ".join(filter_parts),
             "$orderby": "receivedDateTime desc",
             "$top": str(batch_size or self.settings.batch_size),
-            "$select": "id,subject,from,receivedDateTime,body,internetMessageHeaders",
+            "$select": "id,internetMessageId,subject,from,receivedDateTime,body,internetMessageHeaders",
         }
 
         try:

@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import sessionmaker
 
 from newsletter_archiver.core.config import get_settings
@@ -49,12 +49,20 @@ class DatabaseManager:
 
     # --- Newsletter operations ---
 
-    def newsletter_exists(self, message_id: str) -> bool:
-        """Check if a newsletter with this message_id is already stored."""
+    def newsletter_exists(self, message_id: str, internet_message_id: str = "") -> bool:
+        """Check if a newsletter is already stored.
+
+        Matches on the Graph message_id or, when provided, the RFC
+        internet_message_id — the latter survives mailbox moves, which
+        change Graph message IDs.
+        """
+        conditions = [Newsletter.message_id == message_id]
+        if internet_message_id:
+            conditions.append(Newsletter.internet_message_id == internet_message_id)
         with self._session() as session:
             result = session.execute(
-                select(Newsletter).where(Newsletter.message_id == message_id)
-            ).scalar_one_or_none()
+                select(Newsletter.id).where(or_(*conditions))
+            ).first()
             return result is not None
 
     def save_newsletter(
@@ -70,11 +78,13 @@ class DatabaseManager:
         reading_time_minutes: float = 0.0,
         tags: str = "",
         category: str = "",
+        internet_message_id: str = "",
     ) -> Newsletter:
         """Insert a newsletter record."""
         with self._session() as session:
             newsletter = Newsletter(
                 message_id=message_id,
+                internet_message_id=internet_message_id,
                 subject=subject,
                 sender_email=sender_email,
                 sender_name=sender_name,
@@ -88,6 +98,35 @@ class DatabaseManager:
             )
             session.add(newsletter)
             return newsletter
+
+    def mark_newsletter_tidied(
+        self,
+        newsletter_id: int,
+        new_message_id: str = "",
+        internet_message_id: str = "",
+    ) -> None:
+        """Record that a newsletter's email was marked read + archived.
+
+        Updates the stored Graph message_id when the move produced a new one,
+        and backfills internet_message_id when available.
+        """
+        with self._session() as session:
+            newsletter = session.get(Newsletter, newsletter_id)
+            if newsletter is None:
+                return
+            if new_message_id:
+                newsletter.message_id = new_message_id
+            if internet_message_id:
+                newsletter.internet_message_id = internet_message_id
+            newsletter.tidied_at = _to_naive_utc(datetime.now(UTC))
+
+    def get_untidied_newsletters(self) -> list[Newsletter]:
+        """Newsletters whose emails have not yet been marked read + archived."""
+        with self._session() as session:
+            return list(session.execute(
+                select(Newsletter).where(Newsletter.tidied_at.is_(None))
+                .order_by(Newsletter.received_date)
+            ).scalars())
 
     def get_newsletter_count(self) -> int:
         with self._session() as session:
@@ -231,11 +270,13 @@ class DatabaseManager:
         sender_name: str,
         received_date: datetime,
         html_body: str,
+        internet_message_id: str = "",
     ) -> PendingEmail:
         """Queue an email for review."""
         with self._session() as session:
             pending = PendingEmail(
                 message_id=message_id,
+                internet_message_id=internet_message_id,
                 subject=subject,
                 sender_email=sender_email,
                 sender_name=sender_name,

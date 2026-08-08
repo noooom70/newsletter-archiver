@@ -21,6 +21,7 @@ from newsletter_archiver.fetcher.email_parser import (
     parse_message,
 )
 from newsletter_archiver.fetcher.graph_client import GraphClient
+from newsletter_archiver.fetcher.tidy import tidy_newsletter
 from newsletter_archiver.search.indexer import SearchIndexer
 from newsletter_archiver.storage.db_manager import DatabaseManager
 from newsletter_archiver.storage.file_manager import (
@@ -40,6 +41,11 @@ def app(
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be filtered out without archiving or queuing"),
     auto: bool = typer.Option(False, "--auto", help="Archive all emails immediately, ignoring sender mode"),
     update: bool = typer.Option(False, "--update", "-u", help="Fetch from the last archived email date to now"),
+    tidy: Optional[bool] = typer.Option(
+        None, "--tidy/--no-tidy",
+        help="Mark archived emails read and move them to the mailbox Archive folder "
+             "(default: the tidy_inbox setting)",
+    ),
 ):
     """Fetch newsletters from Outlook and archive them.
 
@@ -126,7 +132,11 @@ def app(
     elif scan:
         _scan_for_senders(messages, db)
     else:
-        _archive_approved(messages, db, approved_senders, force_auto=auto)
+        tidy_enabled = settings.tidy_inbox if tidy is None else tidy
+        _archive_approved(
+            messages, db, approved_senders, force_auto=auto,
+            graph=client if tidy_enabled else None,
+        )
 
 
 def _dry_run(messages: list, approved_senders: set[str]):
@@ -202,12 +212,15 @@ def _scan_for_senders(messages: list, db: DatabaseManager):
         rprint(f"  Already known: {known}")
 
 
-def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set[str], force_auto: bool = False):
+def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set[str],
+                      force_auto: bool = False, graph: GraphClient | None = None):
     """Archive emails from approved senders only.
 
     Auto-mode senders are archived immediately.
     Review-mode senders have emails queued in pending_emails for individual approval.
     When force_auto is True, all emails are archived immediately regardless of sender mode.
+    When graph is provided, each archived email is marked read and moved to the
+    mailbox Archive folder (best-effort).
     """
     if not approved_senders:
         rprint("[yellow]No approved senders yet.[/yellow]")
@@ -227,6 +240,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
     skipped = 0
     not_approved = 0
     new_pending = 0
+    tidied = 0
 
     with Progress(
         SpinnerColumn(),
@@ -261,7 +275,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                 continue
 
             # Skip if already archived or already queued
-            if db.newsletter_exists(parsed.message_id):
+            if db.newsletter_exists(parsed.message_id, parsed.internet_message_id):
                 skipped += 1
                 progress.advance(task)
                 continue
@@ -307,8 +321,15 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                     html_path=str(html_path),
                     word_count=word_count,
                     reading_time_minutes=reading_time,
+                    internet_message_id=parsed.internet_message_id,
                 )
                 _auto_index(indexer, newsletter, str(md_path))
+                if graph is not None:
+                    if tidy_newsletter(
+                        graph, db, newsletter.id, parsed.message_id,
+                        internet_message_id=parsed.internet_message_id,
+                    ):
+                        tidied += 1
                 saved += 1
             else:
                 # Review mode: queue for individual approval
@@ -319,6 +340,7 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                     sender_name=parsed.sender_name,
                     received_date=parsed.received_date,
                     html_body=parsed.html_body,
+                    internet_message_id=parsed.internet_message_id,
                 )
                 queued += 1
 
@@ -334,6 +356,8 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
     rprint("[green]✓[/green] Done!")
     if saved:
         rprint(f"  Archived: [bold green]{saved}[/bold green] newsletters")
+    if tidied:
+        rprint(f"  Tidied in mailbox (read + archived): [green]{tidied}[/green]")
     if queued:
         rprint(f"  Queued for review: [bold yellow]{queued}[/bold yellow]")
         rprint("  Run [cyan]newsletter-archiver review[/cyan] to approve or deny them.")

@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 @dataclass
 class ParsedEmail:
     message_id: str
+    internet_message_id: str
     subject: str
     sender_email: str
     sender_name: str
@@ -50,6 +51,7 @@ def parse_message(message: dict) -> ParsedEmail:
 
     return ParsedEmail(
         message_id=message.get("id", ""),
+        internet_message_id=message.get("internetMessageId", ""),
         subject=message.get("subject", "(No Subject)") or "(No Subject)",
         sender_email=sender_email,
         sender_name=sender_name,
