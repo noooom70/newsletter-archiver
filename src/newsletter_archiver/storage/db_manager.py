@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from typing import Optional
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import sessionmaker
 
 from newsletter_archiver.core.config import get_settings
@@ -49,16 +49,27 @@ class DatabaseManager:
 
     # --- Newsletter operations ---
 
-    def newsletter_exists(self, message_id: str, internet_message_id: str = "") -> bool:
+    def newsletter_exists(
+        self,
+        message_id: str,
+        internet_message_id: str = "",
+        sender_email: str = "",
+    ) -> bool:
         """Check if a newsletter is already stored.
 
-        Matches on the Graph message_id or, when provided, the RFC
+        Matches on the Graph message_id or, when both are provided, the RFC
         internet_message_id — the latter survives mailbox moves, which
-        change Graph message IDs.
+        change Graph message IDs. The internet_message_id match is scoped to
+        the same sender: the header is sender-controlled, so an unscoped
+        match would let one sender reuse another's Message-ID to have their
+        email silently skipped as a duplicate.
         """
         conditions = [Newsletter.message_id == message_id]
-        if internet_message_id:
-            conditions.append(Newsletter.internet_message_id == internet_message_id)
+        if internet_message_id and sender_email:
+            conditions.append(and_(
+                Newsletter.internet_message_id == internet_message_id,
+                Newsletter.sender_email == sender_email,
+            ))
         with self._session() as session:
             result = session.execute(
                 select(Newsletter.id).where(or_(*conditions))

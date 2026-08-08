@@ -107,9 +107,16 @@ class TestDedup:
     def test_newsletter_exists_by_internet_message_id(self, db):
         _save(db, message_id="old-graph-id", internet_message_id="<stable@mail>")
         # After a mailbox move the Graph ID changes but the RFC ID does not
-        assert db.newsletter_exists("brand-new-graph-id", "<stable@mail>") is True
-        assert db.newsletter_exists("brand-new-graph-id", "<other@mail>") is False
+        assert db.newsletter_exists("brand-new-graph-id", "<stable@mail>", "a@b.com") is True
+        assert db.newsletter_exists("brand-new-graph-id", "<other@mail>", "a@b.com") is False
         assert db.newsletter_exists("old-graph-id") is True
+
+    def test_internet_message_id_match_is_scoped_to_sender(self, db):
+        _save(db, message_id="old-graph-id", internet_message_id="<stable@mail>")
+        # A different sender reusing the Message-ID must NOT count as a dupe
+        assert db.newsletter_exists("new-id", "<stable@mail>", "evil@spoof.com") is False
+        # Without a sender the header is ignored entirely
+        assert db.newsletter_exists("new-id", "<stable@mail>") is False
 
     def test_migration_adds_columns(self, db):
         from sqlalchemy import inspect
