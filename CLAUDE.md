@@ -19,6 +19,7 @@
 - SQLite stays on local filesystem to avoid cloud sync corruption
 - Publication-based archive directory naming via YAML mapping; falls back to slugified sender name
 - Invisible Unicode chars (email preheader padding) stripped during HTML→Markdown conversion and at index time
+- Inbox tidy (mark read + move to mailbox Archive) is best-effort and controlled by `TIDY_INBOX` / `--tidy`; dedup uses `internet_message_id` (RFC header) alongside the Graph `message_id` because mailbox moves change Graph IDs
 
 ## Common Commands
 ```bash

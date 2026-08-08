@@ -25,6 +25,10 @@ class Newsletter(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     message_id = Column(String, unique=True, nullable=False, index=True)
+    # RFC Message-ID header — stable across mailbox moves, unlike message_id
+    internet_message_id = Column(String, index=True)
+    # When the message was marked read + moved to the mailbox Archive folder
+    tidied_at = Column(DateTime)
     subject = Column(String, nullable=False)
     sender_email = Column(String, nullable=False, index=True)
     sender_name = Column(String, default="")
@@ -70,6 +74,7 @@ class PendingEmail(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     message_id = Column(String, unique=True, nullable=False, index=True)
+    internet_message_id = Column(String, default="")
     subject = Column(String, nullable=False)
     sender_email = Column(String, nullable=False, index=True)
     sender_name = Column(String, default="")
@@ -113,6 +118,25 @@ def _migrate(engine) -> None:
         if "mode" not in columns:
             with engine.begin() as conn:
                 conn.execute(text("ALTER TABLE senders ADD COLUMN mode VARCHAR DEFAULT 'review'"))
+
+    # Add tidy-related columns if missing (added in inbox-tidy feature)
+    if "newsletters" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("newsletters")}
+        with engine.begin() as conn:
+            if "internet_message_id" not in columns:
+                conn.execute(text("ALTER TABLE newsletters ADD COLUMN internet_message_id VARCHAR"))
+                conn.execute(text(
+                    "CREATE INDEX ix_newsletters_internet_message_id "
+                    "ON newsletters (internet_message_id)"
+                ))
+            if "tidied_at" not in columns:
+                conn.execute(text("ALTER TABLE newsletters ADD COLUMN tidied_at DATETIME"))
+
+    if "pending_emails" in inspector.get_table_names():
+        columns = {col["name"] for col in inspector.get_columns("pending_emails")}
+        if "internet_message_id" not in columns:
+            with engine.begin() as conn:
+                conn.execute(text("ALTER TABLE pending_emails ADD COLUMN internet_message_id VARCHAR DEFAULT ''"))
 
 
 def get_session(db_url: str) -> Session:

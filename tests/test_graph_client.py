@@ -35,7 +35,7 @@ class TestGraphGetRetries:
         resp_429 = _mock_response(429, {"error": "throttled"}, {"Retry-After": "1"})
         resp_200 = _mock_response(200, {"value": [{"id": "1"}]})
 
-        with patch("newsletter_archiver.fetcher.graph_client.requests.get",
+        with patch("newsletter_archiver.fetcher.graph_client.requests.request",
                     side_effect=[resp_429, resp_200]), \
              patch("newsletter_archiver.fetcher.graph_client.time.sleep") as mock_sleep:
             result = client._graph_get("/me/messages")
@@ -47,7 +47,7 @@ class TestGraphGetRetries:
         resp_503 = _mock_response(503, {"error": "busy"})
         resp_200 = _mock_response(200, {"value": []})
 
-        with patch("newsletter_archiver.fetcher.graph_client.requests.get",
+        with patch("newsletter_archiver.fetcher.graph_client.requests.request",
                     side_effect=[resp_503, resp_200]), \
              patch("newsletter_archiver.fetcher.graph_client.time.sleep") as mock_sleep:
             result = client._graph_get("/me/messages")
@@ -58,7 +58,7 @@ class TestGraphGetRetries:
         """Should raise FetchError after exhausting retries."""
         resp_429 = _mock_response(429, {"error": "throttled"}, {"Retry-After": "1"})
 
-        with patch("newsletter_archiver.fetcher.graph_client.requests.get",
+        with patch("newsletter_archiver.fetcher.graph_client.requests.request",
                     return_value=resp_429), \
              patch("newsletter_archiver.fetcher.graph_client.time.sleep"):
             with pytest.raises(FetchError, match="Graph API error 429"):
@@ -69,7 +69,7 @@ class TestGraphGetRetries:
         resp_401 = _mock_response(401, {"error": "unauthorized"})
         resp_200 = _mock_response(200, {"value": []})
 
-        with patch("newsletter_archiver.fetcher.graph_client.requests.get",
+        with patch("newsletter_archiver.fetcher.graph_client.requests.request",
                     side_effect=[resp_401, resp_200]), \
              patch.object(client, "_get_token", return_value="new-token") as mock_token:
             result = client._graph_get("/me/messages")

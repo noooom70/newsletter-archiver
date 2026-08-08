@@ -1,17 +1,22 @@
 """Review command - approve or deny individual queued emails."""
 
 import logging
+from typing import Optional
 
+import typer
 from rich import print as rprint
 from rich.prompt import Prompt
 
 from newsletter_archiver.core.config import get_settings
+from newsletter_archiver.core.exceptions import AuthError
 from newsletter_archiver.fetcher.content_extractor import (
     build_markdown_document,
     calculate_reading_time,
     calculate_word_count,
     html_to_markdown,
 )
+from newsletter_archiver.fetcher.graph_client import GraphClient
+from newsletter_archiver.fetcher.tidy import tidy_newsletter
 from newsletter_archiver.search.indexer import SearchIndexer
 from newsletter_archiver.storage.db_manager import DatabaseManager
 from newsletter_archiver.storage.file_manager import (
@@ -22,7 +27,13 @@ from newsletter_archiver.storage.file_manager import (
 logger = logging.getLogger(__name__)
 
 
-def app():
+def app(
+    tidy: Optional[bool] = typer.Option(
+        None, "--tidy/--no-tidy",
+        help="Mark approved emails read and move them to the mailbox Archive folder "
+             "(default: the tidy_inbox setting)",
+    ),
+):
     """Review and approve/deny individual queued emails.
 
     Emails from review-mode senders are queued during fetch.
@@ -31,6 +42,8 @@ def app():
     settings = get_settings()
     settings.ensure_dirs()
     db = DatabaseManager()
+    tidy_enabled = settings.tidy_inbox if tidy is None else tidy
+    graph: Optional[GraphClient] = None
 
     pending = db.get_pending_emails()
 
@@ -96,6 +109,7 @@ def app():
                 html_path=str(html_path),
                 word_count=word_count,
                 reading_time_minutes=reading_time,
+                internet_message_id=email.internet_message_id or "",
             )
 
             # Auto-index for search; failures are logged, not fatal
@@ -114,6 +128,22 @@ def app():
 
             db.delete_pending_email(email.id)
             approved += 1
+
+            if tidy_enabled:
+                if graph is None:
+                    graph = GraphClient()
+                    try:
+                        graph.authenticate()
+                    except AuthError as e:
+                        rprint(f"  [yellow]Mailbox tidy disabled (auth failed): {e}[/yellow]")
+                        tidy_enabled = False
+                        graph = None
+                if graph is not None:
+                    tidy_newsletter(
+                        graph, db, newsletter.id, email.message_id,
+                        internet_message_id=email.internet_message_id or "",
+                    )
+
             rprint("  [green]Archived[/green]")
         elif choice == "d":
             db.delete_pending_email(email.id)

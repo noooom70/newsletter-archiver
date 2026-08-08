@@ -9,6 +9,7 @@ from newsletter_archiver.cli.commands.index import app as index_app
 from newsletter_archiver.cli.commands.review import app as review_app
 from newsletter_archiver.cli.commands.search import app as search_app
 from newsletter_archiver.cli.commands.senders import app as senders_app
+from newsletter_archiver.cli.commands.tidy import app as tidy_app
 
 app = typer.Typer(
     name="newsletter-archiver",
@@ -23,6 +24,7 @@ app.add_typer(index_app, name="index", help="Build and manage search indexes.")
 app.add_typer(search_app, name="search", help="Search archived newsletters.")
 app.command(name="fetch")(fetch_app)
 app.command(name="review")(review_app)
+app.command(name="tidy")(tidy_app)
 
 
 if __name__ == "__main__":
