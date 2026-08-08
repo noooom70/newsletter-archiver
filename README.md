@@ -14,9 +14,10 @@ A CLI tool that fetches email newsletters from Outlook via the Microsoft Graph A
 - Deduplication: safe to re-run without creating duplicates
 - Date range support for backfilling archives
 - **Full-text keyword search** via SQLite FTS5 (porter stemming, ranked snippets)
-- **Semantic search** via sentence-transformers (local, no API key needed)
-- **RAG Q&A** — ask natural language questions and get AI-generated answers grounded in your archive (via Claude API)
+- **Semantic search** via sentence-transformers (local, no API key needed) — optional `rag` extra
+- **RAG Q&A** — ask natural language questions and get AI-generated answers grounded in your archive (via Claude API) — optional `rag` extra
 - Auto-indexes new newsletters on fetch and review approval
+- Markdown output with YAML frontmatter (`title`, `from`, `date`), ready for external RAG/vector-search pipelines to index
 
 ## Installation
 
@@ -27,6 +28,19 @@ git clone https://github.com/noooom70/newsletter-archiver.git
 cd newsletter-archiver
 poetry install
 ```
+
+The default install covers fetching, archiving, and keyword (FTS) search. Semantic search
+and RAG Q&A pull in heavier dependencies (sentence-transformers/PyTorch, the Anthropic SDK)
+and are packaged as the optional `rag` extra:
+
+```bash
+poetry install --extras rag        # or: pip install 'newsletter-archiver[rag]'
+```
+
+Without the extra, `search semantic` and `search ask` print an install hint, and
+fetch/index skip vector embedding while keeping the FTS index up to date. This keeps the
+core tool lean if you index the archive with an external RAG stack (e.g. a Qdrant pipeline
+pointed at the archive directory) instead of the built-in one.
 
 ## Quick Start
 
@@ -135,7 +149,7 @@ Search your archived newsletters.
 poetry run newsletter-archiver search keyword "TSMC"
 poetry run newsletter-archiver search keyword '"artificial intelligence" AND business'
 
-# Semantic search (meaning-based, uses sentence-transformers locally)
+# Semantic search (meaning-based, uses sentence-transformers locally; requires the rag extra)
 poetry run newsletter-archiver search semantic "how AI changes business models"
 
 # RAG Q&A (ask a question, get an answer with citations via Claude)
@@ -159,7 +173,8 @@ Keyword and semantic search options:
 | `-s`, `--sender` | Filter by sender name |
 | `-m`, `--model` | Override Claude model (default: claude-sonnet-4-5-20250929) |
 
-The `ask` command requires an `ANTHROPIC_API_KEY` environment variable (or set in `.env`).
+Semantic search and `ask` require the `rag` extra (see Installation). The `ask` command
+additionally requires an `ANTHROPIC_API_KEY` environment variable (or set in `.env`).
 
 ### index
 

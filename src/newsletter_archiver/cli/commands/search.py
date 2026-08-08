@@ -67,6 +67,12 @@ def ask(
     model: Optional[str] = typer.Option(None, "--model", "-m", help="Override Claude model"),
 ):
     """Ask a question and get an AI-generated answer grounded in your archive."""
+    from newsletter_archiver.search.optional_deps import RAG_INSTALL_HINT, rag_available
+
+    if not rag_available():
+        rprint(f"[yellow]{RAG_INSTALL_HINT}[/yellow]")
+        raise typer.Exit(1)
+
     settings = get_settings()
     settings.ensure_dirs()
 
@@ -106,6 +112,12 @@ def semantic(
     sender: Optional[str] = typer.Option(None, "--sender", "-s", help="Filter by sender name"),
 ):
     """Search newsletters by meaning using vector similarity."""
+    from newsletter_archiver.search.optional_deps import RAG_INSTALL_HINT, rag_available
+
+    if not rag_available():
+        rprint(f"[yellow]{RAG_INSTALL_HINT}[/yellow]")
+        raise typer.Exit(1)
+
     settings = get_settings()
     settings.ensure_dirs()
 

@@ -16,6 +16,14 @@ def build(
     vector_only: bool = typer.Option(False, "--vector-only", help="Only build vector embeddings index"),
 ):
     """Build or rebuild search indexes."""
+    from newsletter_archiver.search.optional_deps import RAG_INSTALL_HINT, rag_available
+
+    if not rag_available():
+        if vector_only:
+            rprint(f"[yellow]{RAG_INSTALL_HINT}[/yellow]")
+            raise typer.Exit(1)
+        fts_only = True
+
     settings = get_settings()
     settings.ensure_dirs()
 
@@ -51,6 +59,12 @@ def status():
 
     rprint(f"  Total newsletters: [bold]{stats['total_newsletters']}[/bold]")
     rprint(f"  FTS indexed:       [bold]{stats['fts_indexed']}[/bold]")
+
+    from newsletter_archiver.search.optional_deps import rag_available
+
+    if not rag_available():
+        rprint("  Vector indexed:    [dim]not installed ('rag' extra)[/dim]")
+        return
 
     # Only show vector stats if embeddings exist (avoid loading sentence-transformers)
     try:

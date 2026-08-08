@@ -19,6 +19,8 @@
 - SQLite stays on local filesystem to avoid cloud sync corruption
 - Publication-based archive directory naming via YAML mapping; falls back to slugified sender name
 - Invisible Unicode chars (email preheader padding) stripped during HTML→Markdown conversion and at index time
+- Vector/RAG search (`search semantic`, `search ask`) is packaged as the optional `rag` extra; without it the tool is ingestion + FTS only
+- On this machine the `rag` extra stays uninstalled: retrieval is handled by the local-rag project (`~/local-rag`, Qdrant), which indexes the archive dir on Proton Drive as its `newsletters` corpus
 
 ## Common Commands
 ```bash
