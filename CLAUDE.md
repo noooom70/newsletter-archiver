@@ -21,7 +21,7 @@
 - Invisible Unicode chars (email preheader padding) stripped during HTML→Markdown conversion and at index time
 - Vector/RAG search (`search semantic`, `search ask`) is packaged as the optional `rag` extra; without it the tool is ingestion + FTS only
 - On this machine the `rag` extra stays uninstalled: retrieval is handled by the local-rag project (`~/local-rag`, Qdrant), which indexes the archive dir on Proton Drive as its `newsletters` corpus
-- Inbox tidy (mark read + move to mailbox Archive) is best-effort and controlled by `TIDY_INBOX` / `--tidy`; dedup uses `internet_message_id` (RFC header) alongside the Graph `message_id` because mailbox moves change Graph IDs
+- Inbox tidy (mark read + move to mailbox Archive) is best-effort and controlled by `TIDY_INBOX` / `--tidy`; dedup uses `internet_message_id` (RFC header) alongside the Graph `message_id` because mailbox moves change Graph IDs; the header match is scoped to the same sender since the header is sender-controlled
 
 ## Common Commands
 ```bash

@@ -275,7 +275,9 @@ def _archive_approved(messages: list, db: DatabaseManager, approved_senders: set
                 continue
 
             # Skip if already archived or already queued
-            if db.newsletter_exists(parsed.message_id, parsed.internet_message_id):
+            if db.newsletter_exists(
+                parsed.message_id, parsed.internet_message_id, parsed.sender_email,
+            ):
                 skipped += 1
                 progress.advance(task)
                 continue
