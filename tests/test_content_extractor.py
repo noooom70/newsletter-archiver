@@ -127,3 +127,27 @@ def test_clean_html_keeps_large_blocks_mentioning_terms():
     cleaned = clean_html(html)
     assert "word word" in cleaned
     assert "Privacy Policy" not in cleaned  # anchor itself still removed
+
+
+def test_alt_text_preserved_when_meaningful():
+    html = (
+        '<p><img src="https://cdn.example/chart.png" '
+        'alt="Chart showing quarterly revenue growth by region"></p>'
+    )
+    md = html_to_markdown(html)
+    assert "Chart showing quarterly revenue growth by region" in md
+
+
+def test_alt_text_dropped_when_boilerplate_or_short():
+    html = (
+        '<p><img src="https://cdn.example/a.png" alt="logo">'
+        '<img src="https://cdn.example/b.png" alt="photo of thing.jpg">'
+        '<img src="https://cdn.example/c.png" alt="https://cdn.example/c.png">'
+        '<img src="https://cdn.example/d.png" alt="two words">'
+        '<img src="https://cdn.example/e.png"></p>'
+    )
+    md = html_to_markdown(html)
+    assert "logo" not in md
+    assert "thing.jpg" not in md
+    assert "cdn.example" not in md
+    assert "two words" not in md

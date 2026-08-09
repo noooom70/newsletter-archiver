@@ -24,6 +24,27 @@ _BOILERPLATE_PATTERNS = [
     re.compile(r"copyright © .* all rights reserved", re.IGNORECASE),
 ]
 
+_ALT_BOILERPLATE = {"logo", "spacer", "divider", "banner", "image", "photo", "icon"}
+_IMAGE_FILE_RE = re.compile(r"\.(png|jpe?g|gif|webp|svg)\s*$", re.IGNORECASE)
+
+
+def _meaningful_alt(alt: str) -> bool:
+    alt = alt.strip()
+    return (
+        len(alt.split()) >= 3
+        and "://" not in alt
+        and not _IMAGE_FILE_RE.search(alt)
+        and alt.lower() not in _ALT_BOILERPLATE
+    )
+
+
+def _preserve_alt_text(soup) -> None:
+    """Replace images that carry meaningful alt text with that text."""
+    for img in soup.find_all("img"):
+        alt = img.get("alt", "")
+        if _meaningful_alt(alt):
+            img.replace_with(alt.strip())
+
 
 def _remove_chrome(soup) -> None:
     """Remove chrome links (unsubscribe/footer/nav) and their small parents."""
@@ -72,6 +93,9 @@ def clean_html(html: str) -> str:
     # Remove chrome links (unsubscribe/footer/nav) and sender-footer boilerplate
     _remove_chrome(soup)
     _remove_boilerplate(soup)
+
+    # Preserve meaningful image alt text
+    _preserve_alt_text(soup)
 
     return str(soup)
 
