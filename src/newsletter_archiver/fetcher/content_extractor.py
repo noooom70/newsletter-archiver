@@ -5,6 +5,46 @@ import re
 from bs4 import BeautifulSoup
 from markdownify import markdownify
 
+_CHROME_PATTERNS = [
+    re.compile(r"unsubscribe", re.IGNORECASE),
+    re.compile(r"manage\s+(your\s+)?preferences", re.IGNORECASE),
+    re.compile(r"email\s+preferences", re.IGNORECASE),
+    re.compile(r"view\s+(this\s+)?(email\s+)?(online|in\s+(your\s+)?browser)", re.IGNORECASE),
+    re.compile(r"privacy\s+policy", re.IGNORECASE),
+    re.compile(r"terms\s*(&(amp;)?|and)\s*conditions", re.IGNORECASE),
+    re.compile(r"contact\s+us", re.IGNORECASE),
+    re.compile(r"about\s+us", re.IGNORECASE),
+    re.compile(r"forward\s+to\s+a\s+friend", re.IGNORECASE),
+    re.compile(r"update\s+your\s+(details|profile|preferences)", re.IGNORECASE),
+]
+
+_BOILERPLATE_PATTERNS = [
+    re.compile(r"this email (was|has been) sent to", re.IGNORECASE),
+    re.compile(r"registered in england and wales", re.IGNORECASE),
+    re.compile(r"copyright © .* all rights reserved", re.IGNORECASE),
+]
+
+
+def _remove_chrome(soup) -> None:
+    """Remove chrome links (unsubscribe/footer/nav) and their small parents."""
+    for a_tag in soup.find_all("a"):
+        text = a_tag.get_text(strip=True)
+        if any(p.search(text) for p in _CHROME_PATTERNS):
+            parent = a_tag.parent
+            if parent and parent.name in ("p", "div", "td", "span"):
+                if len(parent.get_text(strip=True)) < 200:
+                    parent.decompose()
+                    continue
+            a_tag.decompose()
+
+
+def _remove_boilerplate(soup) -> None:
+    """Remove small blocks matching known sender-footer boilerplate."""
+    for tag in soup.find_all(["p", "td", "div", "span"]):
+        text = tag.get_text(" ", strip=True)
+        if len(text) < 300 and any(p.search(text) for p in _BOILERPLATE_PATTERNS):
+            tag.decompose()
+
 
 def clean_html(html: str) -> str:
     """Remove tracking pixels, scripts, styles, and other noise from HTML."""
@@ -29,26 +69,9 @@ def clean_html(html: str) -> str:
         if is_tracking:
             img.decompose()
 
-    # Remove common unsubscribe/footer sections
-    footer_patterns = [
-        re.compile(r"unsubscribe", re.IGNORECASE),
-        re.compile(r"manage\s+(your\s+)?preferences", re.IGNORECASE),
-        re.compile(r"email\s+preferences", re.IGNORECASE),
-        re.compile(r"view\s+(this\s+)?(email\s+)?in\s+(your\s+)?browser", re.IGNORECASE),
-    ]
-
-    # Only remove links/small sections matching footer patterns, not large blocks
-    for a_tag in soup.find_all("a"):
-        text = a_tag.get_text(strip=True)
-        if any(p.search(text) for p in footer_patterns):
-            # Remove the parent <p> or <div> if it's small
-            parent = a_tag.parent
-            if parent and parent.name in ("p", "div", "td", "span"):
-                parent_text = parent.get_text(strip=True)
-                if len(parent_text) < 200:
-                    parent.decompose()
-                    continue
-            a_tag.decompose()
+    # Remove chrome links (unsubscribe/footer/nav) and sender-footer boilerplate
+    _remove_chrome(soup)
+    _remove_boilerplate(soup)
 
     return str(soup)
 

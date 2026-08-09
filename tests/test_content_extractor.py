@@ -84,3 +84,46 @@ def test_transactional_subject_detection():
     assert not _is_transactional_subject("The Disappearance of Nancy Guthrie")
     assert not _is_transactional_subject("Longreads + Open Thread")
     assert not _is_transactional_subject("The World in Brief: Rubio love-bombs Europe")
+
+
+def test_clean_html_removes_extended_chrome_links():
+    html = """
+    <div><p>Real article text that should definitely survive this pass.</p>
+    <td><a href="https://e.example/privacy">Privacy Policy</a></td>
+    <td><a href="https://e.example/terms">Terms &amp; Conditions</a></td>
+    <p><a href="https://e.example/contact">Contact us</a></p>
+    <p><a href="https://e.example/fwd">Forward to a friend</a></p></div>
+    """
+    cleaned = clean_html(html)
+    assert "Privacy Policy" not in cleaned
+    assert "Terms" not in cleaned
+    assert "Contact us" not in cleaned
+    assert "Forward to a friend" not in cleaned
+    assert "Real article text" in cleaned
+
+
+def test_clean_html_removes_boilerplate_lines():
+    html = """
+    <div><p>Keep this paragraph of genuine newsletter content.</p>
+    <p>This email was sent to: reader@example.com</p>
+    <td>This email has been sent to reader@example.com because you signed up
+    for this newsletter.</td>
+    <p>Registered in England and Wales. No. 236383. The Adelphi, 1-11 John
+    Adam Street, London, WC2N 6HT</p>
+    <p>Copyright © The Publisher Ltd 2026. All rights reserved.</p></div>
+    """
+    cleaned = clean_html(html)
+    assert "reader@example.com" not in cleaned
+    assert "Registered in England" not in cleaned
+    assert "All rights reserved" not in cleaned
+    assert "genuine newsletter content" in cleaned
+
+
+def test_clean_html_keeps_large_blocks_mentioning_terms():
+    # A long paragraph that merely links to something matching a chrome
+    # pattern must not be decomposed wholesale.
+    long_text = "word " * 60
+    html = f'<p>{long_text}<a href="https://x.example/p">Privacy Policy</a></p>'
+    cleaned = clean_html(html)
+    assert "word word" in cleaned
+    assert "Privacy Policy" not in cleaned  # anchor itself still removed
