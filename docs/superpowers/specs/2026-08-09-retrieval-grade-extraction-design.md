@@ -81,8 +81,9 @@ Pipeline order:
    with no nested block content (p/div/table/img). Guarded tables convert to
    real markdown tables. In the sampled corpus zero tables trip the guard.
 7. **Markdown post-pass.** markdownify (ATX headings), invisible-char
-   stripping, re-encode `)` → `%29` and space → `%20` inside URLs so
-   substituted links can't break markdown syntax, whitespace collapse.
+   stripping, re-encode `(` → `%28`, `)` → `%29`, and space → `%20` inside
+   URLs so substituted links can't break markdown syntax (parens as a pair
+   for visual consistency), whitespace collapse.
 
 ## Component 2: `regenerate` command (`cli/commands/regenerate.py`)
 
