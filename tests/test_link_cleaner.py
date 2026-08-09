@@ -1,6 +1,8 @@
 """Tests for SafeLink unwrapping and tracking-param stripping."""
 
-from newsletter_archiver.fetcher.link_cleaner import clean_url
+from bs4 import BeautifulSoup
+
+from newsletter_archiver.fetcher.link_cleaner import clean_links, clean_url
 
 SAFELINK = (
     "https://na01.safelinks.protection.outlook.com/?url="
@@ -71,3 +73,25 @@ def test_clean_url_plain_url_without_query_untouched():
     url, failed = clean_url("https://example.com/article")
     assert url == "https://example.com/article"
     assert failed is False
+
+
+def test_clean_links_rewrites_all_hrefs():
+    soup = BeautifulSoup(
+        f'<p><a href="{SAFELINK}">Read</a>'
+        '<a href="https://x.example/a?qs=T">Other</a>'
+        "<a>no href</a></p>",
+        "html.parser",
+    )
+    failures = clean_links(soup)
+    assert failures == 0
+    hrefs = [a.get("href") for a in soup.find_all("a")]
+    assert hrefs[0] == "https://stratechery.com/2026/example-article/"
+    assert hrefs[1] == "https://x.example/a"
+    assert hrefs[2] is None
+
+
+def test_clean_links_counts_unwrap_failures():
+    bad = "https://na01.safelinks.protection.outlook.com/?data=05"
+    soup = BeautifulSoup(f'<a href="{bad}">x</a>', "html.parser")
+    assert clean_links(soup) == 1
+    assert soup.find("a")["href"] == bad

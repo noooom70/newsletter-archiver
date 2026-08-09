@@ -45,3 +45,13 @@ def clean_url(url: str) -> tuple[str, bool]:
     )
     url = url.replace("(", "%28").replace(")", "%29").replace(" ", "%20")
     return url, False
+
+
+def clean_links(soup) -> int:
+    """Clean every anchor href in place. Returns the unwrap-failure count."""
+    failures = 0
+    for a in soup.find_all("a", href=True):
+        cleaned, failed = clean_url(a["href"])
+        a["href"] = cleaned
+        failures += int(failed)
+    return failures
