@@ -46,6 +46,42 @@ def _preserve_alt_text(soup) -> None:
             img.replace_with(alt.strip())
 
 
+_BLOCK_TAGS = ["p", "div", "table", "img", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6"]
+
+
+def _own(table, tag_names):
+    """Descendant tags whose nearest table ancestor is this table."""
+    return [t for t in table.find_all(tag_names) if t.find_parent("table") is table]
+
+
+def _is_data_table(table) -> bool:
+    if _own(table, ["th"]):
+        return True
+    rows = _own(table, ["tr"])
+    if len(rows) < 2:
+        return False
+    for tr in rows:
+        cells = [td for td in tr.find_all("td") if td.find_parent("table") is table]
+        if len(cells) < 2:
+            return False
+        for td in cells:
+            if td.find(_BLOCK_TAGS) or len(td.get_text(strip=True)) >= 80:
+                return False
+    return True
+
+
+def _flatten_layout_tables(soup) -> None:
+    """Flatten layout tables to divs; leave data tables for markdownify."""
+    for table in reversed(soup.find_all("table")):
+        if _is_data_table(table):
+            continue
+        for section in _own(table, ["thead", "tbody", "tfoot"]):
+            section.unwrap()
+        for cell in _own(table, ["tr", "td", "th"]):
+            cell.name = "div"
+        table.name = "div"
+
+
 def _remove_chrome(soup) -> None:
     """Remove chrome links (unsubscribe/footer/nav) and their small parents."""
     for a_tag in soup.find_all("a"):
@@ -96,6 +132,9 @@ def clean_html(html: str) -> str:
 
     # Preserve meaningful image alt text
     _preserve_alt_text(soup)
+
+    # Flatten layout tables to divs; leave genuine data tables as markdown tables
+    _flatten_layout_tables(soup)
 
     return str(soup)
 

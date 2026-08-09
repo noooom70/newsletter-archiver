@@ -151,3 +151,49 @@ def test_alt_text_dropped_when_boilerplate_or_short():
     assert "thing.jpg" not in md
     assert "cdn.example" not in md
     assert "two words" not in md
+
+
+def test_layout_tables_flattened_no_pipe_rows():
+    html = """
+    <table role="presentation"><tbody><tr><td>
+      <table><tr><td><p>The article paragraph lives deep in nested layout
+      tables and must come out as clean prose.</p></td></tr></table>
+    </td></tr>
+    <tr><td></td><td></td><td></td></tr></tbody></table>
+    """
+    md = html_to_markdown(html)
+    assert "| --- |" not in md
+    assert "|  |" not in md
+    assert "must come out as clean prose" in md
+
+
+def test_data_table_with_th_survives_as_markdown_table():
+    html = """
+    <table><tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Revenue</td><td>$10M</td></tr>
+    <tr><td>Growth</td><td>12%</td></tr></table>
+    """
+    md = html_to_markdown(html)
+    assert "| Metric | Value |" in md
+    assert "| Revenue | $10M |" in md
+
+
+def test_data_table_grid_of_short_cells_survives():
+    html = """
+    <table><tr><td>2024</td><td>2025</td></tr>
+    <tr><td>1.2</td><td>3.4</td></tr></table>
+    """
+    md = html_to_markdown(html)
+    assert "| 2024 | 2025 |" in md
+
+
+def test_table_with_block_content_is_layout():
+    html = """
+    <table><tr><td><p>A long-form paragraph clearly not tabular data,
+    holding the actual article body.</p></td><td><p>Second column of
+    prose.</p></td></tr>
+    <tr><td><p>x</p></td><td><p>y</p></td></tr></table>
+    """
+    md = html_to_markdown(html)
+    assert "| --- |" not in md
+    assert "actual article body" in md
