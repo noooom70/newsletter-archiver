@@ -224,3 +224,26 @@ def test_db_manager_pending_email_dedup(settings):
             received_date=datetime(2025, 6, 15),
             html_body="<p>2</p>",
         )
+
+
+def test_update_newsletter_metrics(tmp_path):
+    db = DatabaseManager(db_url=f"sqlite:///{tmp_path}/metrics.db")
+    db.save_newsletter(
+        message_id="m1",
+        subject="S",
+        sender_email="a@example.com",
+        sender_name="A",
+        received_date=datetime(2026, 1, 1),
+        markdown_path="/arch/2026/01/a/file.md",
+        html_path="/arch/2026/01/a/file.html",
+        word_count=100,
+        reading_time_minutes=0.5,
+    )
+
+    assert db.update_newsletter_metrics("/arch/2026/01/a/file.md", 42, 0.2) is True
+    nl = db.get_all_newsletters()[0]
+    assert nl.word_count == 42
+    assert nl.reading_time_minutes == 0.2
+
+    assert db.update_newsletter_metrics("/nope.md", 1, 0.1) is False
+    assert db.get_newsletter_count() == 1  # no insert happened
