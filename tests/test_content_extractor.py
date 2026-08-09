@@ -5,6 +5,7 @@ from newsletter_archiver.fetcher.content_extractor import (
     calculate_reading_time,
     calculate_word_count,
     clean_html,
+    extract_markdown,
     html_to_markdown,
 )
 from newsletter_archiver.fetcher.email_parser import _is_transactional_subject
@@ -197,3 +198,32 @@ def test_table_with_block_content_is_layout():
     md = html_to_markdown(html)
     assert "| --- |" not in md
     assert "actual article body" in md
+
+
+def test_extract_markdown_full_pipeline():
+    html = """
+    <html><body><table role="presentation"><tr><td>
+    <h1>Article Title</h1>
+    <p>Body text with a
+    <a href="https://na01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fpub.example%2Fpost%3Fqs%3DTRACK">link</a>.</p>
+    <p><a href="#">Unsubscribe</a></p>
+    <p>This email was sent to: reader@example.com</p>
+    </td></tr></table></body></html>
+    """
+    result = extract_markdown(html)
+    assert "safelinks" not in result.markdown
+    assert "https://pub.example/post" in result.markdown
+    assert "Unsubscribe" not in result.markdown
+    assert "reader@example.com" not in result.markdown
+    assert "Article Title" in result.markdown
+    assert "| --- |" not in result.markdown
+    assert result.unwrap_failures == 0
+
+
+def test_extract_markdown_counts_failures():
+    html = '<a href="https://na01.safelinks.protection.outlook.com/?data=x">y</a>'
+    assert extract_markdown(html).unwrap_failures == 1
+
+
+def test_html_to_markdown_still_returns_str(sample_html):
+    assert isinstance(html_to_markdown(sample_html), str)

@@ -1,9 +1,12 @@
 """HTML cleanup and Markdown conversion."""
 
 import re
+from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
 from markdownify import markdownify
+
+from newsletter_archiver.fetcher.link_cleaner import clean_links
 
 _CHROME_PATTERNS = [
     re.compile(r"unsubscribe", re.IGNORECASE),
@@ -97,26 +100,27 @@ def _remove_chrome(soup) -> None:
 
 def _remove_boilerplate(soup) -> None:
     """Remove small blocks matching known sender-footer boilerplate."""
-    for tag in soup.find_all(["p", "td", "div", "span"]):
+    # Innermost first (like _flatten_layout_tables): a boilerplate line
+    # decomposed from inside-out won't cause its outer wrapper (which may
+    # also hold genuine content) to spuriously match on the same pattern.
+    for tag in reversed(soup.find_all(["p", "td", "div", "span"])):
         text = tag.get_text(" ", strip=True)
         if len(text) < 300 and any(p.search(text) for p in _BOILERPLATE_PATTERNS):
             tag.decompose()
 
 
-def clean_html(html: str) -> str:
-    """Remove tracking pixels, scripts, styles, and other noise from HTML."""
-    soup = BeautifulSoup(html, "html.parser")
+@dataclass
+class ExtractionResult:
+    markdown: str
+    unwrap_failures: int
 
-    # Remove script and style tags
-    for tag in soup.find_all(["script", "style", "noscript"]):
-        tag.decompose()
 
-    # Remove tracking pixels (1x1 images, hidden images)
+def _remove_tracking_pixels(soup) -> None:
+    """Remove 1x1 / hidden images (extracted verbatim from the old clean_html)."""
     for img in soup.find_all("img"):
         width = img.get("width", "")
         height = img.get("height", "")
         style = img.get("style", "")
-
         is_tracking = (
             (width == "1" and height == "1")
             or "display:none" in style.replace(" ", "")
@@ -126,17 +130,35 @@ def clean_html(html: str) -> str:
         if is_tracking:
             img.decompose()
 
-    # Remove chrome links (unsubscribe/footer/nav) and sender-footer boilerplate
+
+def _clean_tree(soup) -> int:
+    for tag in soup.find_all(["script", "style", "noscript"]):
+        tag.decompose()
+    _remove_tracking_pixels(soup)
+    failures = clean_links(soup)
     _remove_chrome(soup)
     _remove_boilerplate(soup)
-
-    # Preserve meaningful image alt text
     _preserve_alt_text(soup)
-
-    # Flatten layout tables to divs; leave genuine data tables as markdown tables
     _flatten_layout_tables(soup)
+    return failures
 
+
+def clean_html(html: str) -> str:
+    """Remove tracking pixels, scripts, styles, and other noise from HTML."""
+    soup = BeautifulSoup(html, "html.parser")
+    _clean_tree(soup)
     return str(soup)
+
+
+def extract_markdown(html: str) -> ExtractionResult:
+    """Convert cleaned HTML to Markdown, returning the result and unwrap stats."""
+    soup = BeautifulSoup(html, "html.parser")
+    failures = _clean_tree(soup)
+    md = markdownify(str(soup), heading_style="ATX", strip=["img"])
+    md = strip_invisible_chars(md)
+    md = re.sub(r"\[\s*\]\([^)]*\)", "", md)
+    md = re.sub(r"\n{3,}", "\n\n", md)
+    return ExtractionResult(md.strip(), failures)
 
 
 def strip_invisible_chars(text: str) -> str:
@@ -156,17 +178,7 @@ def strip_invisible_chars(text: str) -> str:
 
 def html_to_markdown(html: str) -> str:
     """Convert cleaned HTML to Markdown."""
-    cleaned = clean_html(html)
-    md = markdownify(cleaned, heading_style="ATX", strip=["img"])
-
-    # Strip invisible email preheader padding
-    md = strip_invisible_chars(md)
-
-    # Clean up excessive whitespace
-    md = re.sub(r"\n{3,}", "\n\n", md)
-    md = md.strip()
-
-    return md
+    return extract_markdown(html).markdown
 
 
 def build_markdown_document(
