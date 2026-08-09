@@ -215,6 +215,16 @@ poetry run newsletter-archiver archive clean --dry-run
 poetry run newsletter-archiver archive clean
 ```
 
+### regenerate
+
+Rebuild every markdown retrieval copy from its stored HTML (never refetches from the mailbox) — use after extraction-quality improvements to bring the existing archive up to date.
+
+```bash
+# Rebuild all markdown retrieval copies from stored HTML (no refetch)
+poetry run newsletter-archiver regenerate --dry-run   # stats only
+poetry run newsletter-archiver regenerate             # write changes
+```
+
 ### tidy
 
 Mark already-archived newsletters as read and move them to the mailbox Archive folder — a one-off (but re-runnable) sweep for emails archived before inbox tidying was enabled.

@@ -37,6 +37,10 @@ poetry run newsletter-archiver fetch -d 30 --dry-run
 # Rebuild search indexes
 poetry run newsletter-archiver index build --reindex
 
+# Rebuild all markdown retrieval copies from stored HTML (no refetch)
+poetry run newsletter-archiver regenerate --dry-run   # stats only
+poetry run newsletter-archiver regenerate             # write changes
+
 # Run tests
 poetry run pytest
 
