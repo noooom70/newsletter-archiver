@@ -120,6 +120,63 @@ def test_clean_html_removes_boilerplate_lines():
     assert "genuine newsletter content" in cleaned
 
 
+def test_boilerplate_split_across_spans_removes_owner_address():
+    # Real Economist footer shape: the sentence is split across inline spans
+    # with the address in an anchor of its own. Matching the innermost span
+    # and stopping there would leave the address behind.
+    html = """
+    <td><h1>Article Title</h1>
+    <p>A real paragraph of article content that has to survive the pass.</p>
+    <td><p><span>This email has been sent to </span><a title="reader@example.com"
+    ><span>reader@example.com </span></a><span>because you signed up for this
+    newsletter or because it is included in your subscription. </span></p></td>
+    </td>
+    """
+    cleaned = clean_html(html)
+    assert "reader@example.com" not in cleaned
+    assert "because you signed up" not in cleaned
+    assert "Article Title" in cleaned
+    assert "real paragraph of article content" in cleaned
+
+
+def test_boilerplate_matches_across_embedded_newline():
+    html = "<p>Copyright © The Publisher Ltd 2026.\nAll rights reserved.</p>"
+    assert "All rights reserved" not in clean_html(html)
+
+
+def test_chrome_matches_across_embedded_newline():
+    html = "<div><p>Genuine article body worth keeping.</p><p><a href='#'>Manage\nyour preferences</a></p></div>"
+    cleaned = clean_html(html)
+    assert "preferences" not in cleaned
+    assert "Genuine article body" in cleaned
+
+
+def test_subscriber_details_footer_removed():
+    # Stratechery's subscriber-details footer, reduced but structurally
+    # faithful (nested table in a wrapper td). Synthetic name and address —
+    # the repo is public.
+    html = """
+    <td><h2>The Article</h2><p>Article body that must survive this pass.</p></td>
+    <td><table><tbody><tr><td>
+    <span>Subscription Information<br><br></span>
+    <span>Member: Reader Name<br>
+    Email: <a href="mailto:reader@example.com">reader@example.com</a><br>
+    Member since: February 15, 2023<br>Your subscription renews every month<br>
+    Renewal date: February 15, 2026<br><br>You are receiving this email because
+    you are subscribed to <a href="https://pub.example/">Publication</a>.
+    <a href="https://pub.example/account">Click here</a> to view your account
+    and manage your subscriptions. <a href="https://pub.example/u">Click here</a>
+    to unsubscribe.</span></td></tr></tbody></table></td>
+    """
+    cleaned = clean_html(html)
+    assert "Subscription Information" not in cleaned
+    assert "reader@example.com" not in cleaned
+    assert "Member since" not in cleaned
+    assert "Renewal date" not in cleaned
+    assert "The Article" in cleaned
+    assert "Article body that must survive" in cleaned
+
+
 def test_clean_html_keeps_large_blocks_mentioning_terms():
     # A long paragraph that merely links to something matching a chrome
     # pattern must not be decomposed wholesale.

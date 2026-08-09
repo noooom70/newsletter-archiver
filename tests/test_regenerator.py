@@ -1,5 +1,9 @@
 """Tests for archive regeneration from stored HTML."""
 
+from newsletter_archiver.fetcher.content_extractor import (
+    build_markdown_document,
+    html_to_markdown,
+)
 from newsletter_archiver.storage.regenerator import (
     regenerate_archive,
     split_frontmatter,
@@ -59,6 +63,37 @@ def test_dry_run_writes_nothing(tmp_path):
     report = regenerate_archive(tmp_path, db=None, dry_run=True)
     assert report.count("regenerated") == 1
     assert md_path.read_text(encoding="utf-8") == before
+
+
+def test_freshly_fetched_document_is_byte_identical_to_regenerated(tmp_path):
+    """fetch and regenerate must emit the same bytes for the same body.
+
+    Otherwise the first regenerate after every fetch rewrites files that are
+    already correct, purely over a trailing newline.
+    """
+    d = tmp_path / "2026" / "01" / "pub"
+    d.mkdir(parents=True)
+    fetched = build_markdown_document(
+        subject="T",
+        sender_name="A",
+        sender_email="a@example.com",
+        received_date="2026-01-01",
+        markdown_body=html_to_markdown(NOISY_HTML),
+    )
+    (d / "x.html").write_text(NOISY_HTML, encoding="utf-8")
+    (d / "x.md").write_text(fetched, encoding="utf-8")
+
+    report = regenerate_archive(tmp_path, db=None, dry_run=False)
+    assert report.count("unchanged") == 1
+    assert report.count("regenerated") == 0
+    assert (d / "x.md").read_text(encoding="utf-8") == fetched
+
+
+def test_missing_db_rows_counted(tmp_path):
+    _make_pair(tmp_path)
+    report = regenerate_archive(tmp_path, db=None, dry_run=False)
+    assert report.count("regenerated") == 1
+    assert report.missing_db_rows == 1
 
 
 def test_orphan_html_skipped(tmp_path):

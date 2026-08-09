@@ -49,6 +49,19 @@ class RegenReport:
     def total_unwrap_failures(self) -> int:
         return sum(o.unwrap_failures for o in self.outcomes)
 
+    @property
+    def missing_db_rows(self) -> int:
+        """Regenerated files whose markdown_path matched no DB row.
+
+        Only meaningful on a non-dry run: a dry run never touches the DB, so
+        every outcome reports db_row_updated=False.
+        """
+        return sum(
+            1
+            for o in self.outcomes
+            if o.status == "regenerated" and not o.db_row_updated
+        )
+
 
 def split_frontmatter(md_text: str) -> Optional[tuple[str, str]]:
     """Split '---\\n...\\n---\\n' frontmatter from body.

@@ -65,5 +65,17 @@ def app(
 
     if dry_run:
         rprint("\n[yellow]Dry run: no files written.[/yellow]")
+    else:
+        if report.missing_db_rows:
+            rprint(
+                f"[yellow]{report.missing_db_rows} regenerated file(s) had no "
+                f"database row (metrics not refreshed).[/yellow]"
+            )
+        if changed:
+            rprint(
+                "\n[yellow]Search indexes are now stale. Run "
+                "'newsletter-archiver index build --reindex' to refresh "
+                "search indexes.[/yellow]"
+            )
     if report.count("failed"):
         raise typer.Exit(1)

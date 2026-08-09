@@ -25,6 +25,26 @@ _BOILERPLATE_PATTERNS = [
     re.compile(r"this email (was|has been) sent to", re.IGNORECASE),
     re.compile(r"registered in england and wales", re.IGNORECASE),
     re.compile(r"copyright © .* all rights reserved", re.IGNORECASE),
+    # Stratechery's subscriber-details footer (measured 2026-08-09). The
+    # colon keeps "member since"/"renewal date" from matching article prose
+    # such as "a member since 1998"; the real footer always has one.
+    re.compile(r"subscription information", re.IGNORECASE),
+    re.compile(r"member since\s*:", re.IGNORECASE),
+    re.compile(r"renewal date\s*:", re.IGNORECASE),
+]
+
+# A lone boilerplate line (no structured children) may be this long.
+_BOILERPLATE_MAX_CHARS = 300
+# A whole footer block may be this long, but only when every structured
+# child it holds is itself boilerplate (see _is_pure_boilerplate).
+_BOILERPLATE_BLOCK_MAX_CHARS = 600
+
+# Tags that carry structure rather than inline styling. If one of these holds
+# text that is NOT boilerplate, its container holds real content too.
+_CONTENT_TAGS = [
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "div", "table", "tr", "td", "th",
+    "ul", "ol", "li", "blockquote", "pre", "figure",
 ]
 
 _ALT_BOILERPLATE = {"logo", "spacer", "divider", "banner", "image", "photo", "icon"}
@@ -85,27 +105,71 @@ def _flatten_layout_tables(soup) -> None:
         table.name = "div"
 
 
+def _normalized_text(tag) -> str:
+    """Whitespace-normalized subtree text.
+
+    Patterns are written as single spaced lines, but a single HTML text node
+    may carry newlines and runs of spaces ("Copyright (c) X 2026.\\nAll rights
+    reserved."). Collapsing all whitespace first is what makes the match
+    independent of the source formatting.
+    """
+    return " ".join(tag.get_text(" ", strip=True).split())
+
+
 def _remove_chrome(soup) -> None:
     """Remove chrome links (unsubscribe/footer/nav) and their small parents."""
     for a_tag in soup.find_all("a"):
-        text = a_tag.get_text(strip=True)
+        text = _normalized_text(a_tag)
         if any(p.search(text) for p in _CHROME_PATTERNS):
             parent = a_tag.parent
             if parent and parent.name in ("p", "div", "td", "span"):
-                if len(parent.get_text(strip=True)) < 200:
+                if len(_normalized_text(parent)) < 200:
                     parent.decompose()
                     continue
             a_tag.decompose()
 
 
+def _matches_boilerplate(text: str) -> bool:
+    return any(p.search(text) for p in _BOILERPLATE_PATTERNS)
+
+
+def _is_pure_boilerplate(tag) -> bool:
+    """True when this whole block is sender-footer boilerplate.
+
+    Real footers split one boilerplate sentence across inline spans and
+    anchors — "<span>This email has been sent to </span><a><span>addr
+    </span></a><span>because...</span>" — so the address only disappears if
+    the block that *contains* the split sentence is the thing removed, not
+    the one span that happens to match. The guard against removing too much
+    is content, not size: a wrapper holding a heading, an article paragraph
+    or a nav table alongside the boilerplate line is never pure, so the walk
+    outward stops there and only the boilerplate line itself goes.
+    """
+    text = _normalized_text(tag)
+    if not _matches_boilerplate(text):
+        return False
+    if len(text) >= _BOILERPLATE_BLOCK_MAX_CHARS:
+        return False
+    inner = [c for c in tag.find_all(_CONTENT_TAGS) if _normalized_text(c)]
+    if not inner:
+        # One inline run with nothing structured to corroborate it: only the
+        # single-line cap applies.
+        return len(text) < _BOILERPLATE_MAX_CHARS
+    return all(_matches_boilerplate(_normalized_text(c)) for c in inner)
+
+
 def _remove_boilerplate(soup) -> None:
-    """Remove small blocks matching known sender-footer boilerplate."""
-    # Innermost first (like _flatten_layout_tables): a boilerplate line
-    # decomposed from inside-out won't cause its outer wrapper (which may
-    # also hold genuine content) to spuriously match on the same pattern.
-    for tag in reversed(soup.find_all(["p", "td", "div", "span"])):
-        text = tag.get_text(" ", strip=True)
-        if len(text) < 300 and any(p.search(text) for p in _BOILERPLATE_PATTERNS):
+    """Remove blocks matching known sender-footer boilerplate.
+
+    Document order, so the *outermost* qualifying block is decomposed first —
+    equivalent to walking up from a matching tag to the highest ancestor that
+    is still pure boilerplate. Anything already inside a decomposed block is
+    skipped.
+    """
+    for tag in soup.find_all(["p", "td", "div", "span"]):
+        if tag.decomposed:
+            continue
+        if _is_pure_boilerplate(tag):
             tag.decompose()
 
 
@@ -188,7 +252,12 @@ def build_markdown_document(
     received_date: str,
     markdown_body: str,
 ) -> str:
-    """Build a complete Markdown document with frontmatter."""
+    """Build a complete Markdown document with frontmatter.
+
+    Ends with a trailing newline so a freshly fetched .md is byte-identical
+    to what `regenerate` would write for the same body — otherwise every
+    fetched file is needlessly rewritten by the next regenerate run.
+    """
     frontmatter = f"""---
 title: "{subject}"
 from: "{sender_name} <{sender_email}>"
@@ -196,7 +265,7 @@ date: {received_date}
 ---
 
 """
-    return frontmatter + markdown_body
+    return frontmatter + markdown_body + "\n"
 
 
 def calculate_word_count(text: str) -> int:

@@ -52,6 +52,19 @@ def test_clean_url_safelink_non_http_destination_fails_open():
     assert failed is True
 
 
+def test_clean_url_safelink_uppercase_scheme_still_unwraps():
+    # URL schemes are case-insensitive (RFC 3986 §3.1); the destination is
+    # kept exactly as written, only the check is case-folded.
+    wrapped = (
+        "https://na01.safelinks.protection.outlook.com/?url="
+        "HTTPS%3A%2F%2Fpub.example%2FPost-Title"
+    )
+    url, failed = clean_url(wrapped)
+    # urlsplit normalizes the scheme itself; the path keeps its original case.
+    assert url == "https://pub.example/Post-Title"
+    assert failed is False
+
+
 def test_clean_url_nested_redirect_unwraps_one_level_only():
     # Outer SafeLink unwraps; the publisher's own ?url= redirect param is a
     # tracking-strippable param (not in keeplist), so it gets stripped.

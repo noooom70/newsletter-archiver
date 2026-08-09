@@ -25,6 +25,19 @@ def test_regenerate_dry_run_reports_and_writes_nothing(wired_settings):
     assert (d / "x.md").read_text(encoding="utf-8") == FRONTMATTER + "\nold\n"
 
 
+def test_regenerate_reports_missing_db_rows_and_reindex_hint(wired_settings):
+    d = wired_settings.archives_dir / "2026" / "01" / "pub"
+    d.mkdir(parents=True)
+    (d / "x.html").write_text("<p>Fresh body</p>", encoding="utf-8")
+    (d / "x.md").write_text(FRONTMATTER + "\nold\n", encoding="utf-8")
+
+    result = runner.invoke(app, ["regenerate"])
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    assert "1 regenerated file(s) had no database row" in output
+    assert "index build --reindex" in output
+
+
 def test_regenerate_help_registered():
     result = runner.invoke(app, ["regenerate", "--help"])
     assert result.exit_code == 0

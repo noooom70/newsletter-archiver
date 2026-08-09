@@ -225,6 +225,8 @@ poetry run newsletter-archiver regenerate --dry-run   # stats only
 poetry run newsletter-archiver regenerate             # write changes
 ```
 
+**Note:** regeneration rewrites markdown bodies but does not touch the search indexes, so they go stale as soon as files change. Run `poetry run newsletter-archiver index build --reindex` afterwards to refresh them (the command prints the same reminder). Files that no longer have a matching database row are counted in the summary — their word-count metrics are left untouched rather than re-inserted.
+
 ### tidy
 
 Mark already-archived newsletters as read and move them to the mailbox Archive folder — a one-off (but re-runnable) sweep for emails archived before inbox tidying was enabled.

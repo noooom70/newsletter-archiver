@@ -30,7 +30,9 @@ def clean_url(url: str) -> tuple[str, bool]:
     """
     if _is_safelink(url):
         target = parse_qs(urlsplit(url).query).get("url", [""])[0]
-        if not target.startswith(("http://", "https://")):
+        # Scheme comparison is case-insensitive (RFC 3986 §3.1); the target
+        # itself is kept exactly as written — only the check is lowercased.
+        if not target.lower().startswith(("http://", "https://")):
             return url, True
         url = target
 
