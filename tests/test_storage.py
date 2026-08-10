@@ -247,3 +247,51 @@ def test_update_newsletter_metrics(tmp_path):
 
     assert db.update_newsletter_metrics("/nope.md", 1, 0.1) is False
     assert db.get_newsletter_count() == 1  # no insert happened
+
+
+def test_update_newsletter_metrics_duplicate_markdown_path(tmp_path):
+    """Publisher double-sends can archive two distinct rows to the same path.
+
+    Both rows share markdown_path but have different message_id /
+    internet_message_id (legitimate double-send that correctly passed dedup).
+    update_newsletter_metrics must update all of them, not just one.
+    """
+    db = DatabaseManager(db_url=f"sqlite:///{tmp_path}/dup_metrics.db")
+    db.save_newsletter(
+        message_id="m1",
+        subject="S",
+        sender_email="a@example.com",
+        sender_name="A",
+        received_date=datetime(2026, 5, 22),
+        markdown_path="/arch/2026/05/a/dup.md",
+        html_path="/arch/2026/05/a/dup.html",
+        word_count=100,
+        reading_time_minutes=0.5,
+        internet_message_id="imid-1",
+    )
+    db.save_newsletter(
+        message_id="m2",
+        subject="S",
+        sender_email="a@example.com",
+        sender_name="A",
+        received_date=datetime(2026, 5, 22),
+        markdown_path="/arch/2026/05/a/dup.md",
+        html_path="/arch/2026/05/a/dup.html",
+        word_count=100,
+        reading_time_minutes=0.5,
+        internet_message_id="imid-2",
+    )
+
+    assert db.update_newsletter_metrics("/arch/2026/05/a/dup.md", 42, 0.2) is True
+
+    newsletters = [
+        nl
+        for nl in db.get_all_newsletters()
+        if nl.markdown_path == "/arch/2026/05/a/dup.md"
+    ]
+    assert len(newsletters) == 2
+    for nl in newsletters:
+        assert nl.word_count == 42
+        assert nl.reading_time_minutes == 0.2
+
+    assert db.get_newsletter_count() == 2  # no insert happened
