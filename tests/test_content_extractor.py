@@ -1,6 +1,10 @@
 """Tests for HTML cleanup, Markdown conversion, and newsletter detection."""
 
+from bs4 import BeautifulSoup
+
 from newsletter_archiver.fetcher.content_extractor import (
+    _distinct_boilerplate_hits,
+    _normalized_text,
     build_markdown_document,
     calculate_reading_time,
     calculate_word_count,
@@ -168,6 +172,13 @@ def test_subscriber_details_footer_removed():
     and manage your subscriptions. <a href="https://pub.example/u">Click here</a>
     to unsubscribe.</span></td></tr></tbody></table></td>
     """
+    # Why it dies despite exceeding the single-phrase cap: it is in the
+    # footer-headroom band AND several distinct patterns fire at once.
+    footer = BeautifulSoup(html, "html.parser").find_all("td")[-1]
+    text = _normalized_text(footer)
+    assert 300 <= len(text) < 600, f"footer must sit in the headroom band ({len(text)})"
+    assert _distinct_boilerplate_hits(text) >= 2
+
     cleaned = clean_html(html)
     assert "Subscription Information" not in cleaned
     assert "reader@example.com" not in cleaned
@@ -175,6 +186,26 @@ def test_subscriber_details_footer_removed():
     assert "Renewal date" not in cleaned
     assert "The Article" in cleaned
     assert "Article body that must survive" in cleaned
+
+
+def test_long_prose_quoting_one_boilerplate_phrase_survives():
+    # 300-600 chars is footer headroom, and it is granted only to blocks
+    # matching two or more DISTINCT patterns. Article prose quoting a single
+    # footer phrase must survive — including when a block wrapper would
+    # otherwise satisfy a naive "every child is boilerplate" check.
+    prose = (
+        "The phishing campaign impersonated the publisher's own mailing-list "
+        "footer, which is exactly why the security desk flagged it so quickly: "
+        "readers have been trained for years to trust anything that looks like "
+        "a list notice, and this one looked the part. The notice reads \"this "
+        "email was sent to\" your address, followed by a link that goes nowhere "
+        "near the publisher's own domain."
+    )
+    assert 300 <= len(prose) < 600, f"probe must sit in the headroom band ({len(prose)})"
+    for html in (f"<p>{prose}</p>", f"<div><p>{prose}</p></div>"):
+        cleaned = clean_html(html)
+        assert "phishing campaign" in cleaned
+        assert "goes nowhere near the publisher" in cleaned
 
 
 def test_clean_html_keeps_large_blocks_mentioning_terms():

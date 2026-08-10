@@ -33,10 +33,10 @@ _BOILERPLATE_PATTERNS = [
     re.compile(r"renewal date\s*:", re.IGNORECASE),
 ]
 
-# A lone boilerplate line (no structured children) may be this long.
+# A block matching a single boilerplate phrase may be this long.
 _BOILERPLATE_MAX_CHARS = 300
-# A whole footer block may be this long, but only when every structured
-# child it holds is itself boilerplate (see _is_pure_boilerplate).
+# A block matching two or more DISTINCT boilerplate patterns may be this
+# long — a whole sender footer rather than prose quoting one line.
 _BOILERPLATE_BLOCK_MAX_CHARS = 600
 
 # Tags that carry structure rather than inline styling. If one of these holds
@@ -133,6 +133,10 @@ def _matches_boilerplate(text: str) -> bool:
     return any(p.search(text) for p in _BOILERPLATE_PATTERNS)
 
 
+def _distinct_boilerplate_hits(text: str) -> int:
+    return sum(1 for p in _BOILERPLATE_PATTERNS if p.search(text))
+
+
 def _is_pure_boilerplate(tag) -> bool:
     """True when this whole block is sender-footer boilerplate.
 
@@ -140,21 +144,32 @@ def _is_pure_boilerplate(tag) -> bool:
     anchors — "<span>This email has been sent to </span><a><span>addr
     </span></a><span>because...</span>" — so the address only disappears if
     the block that *contains* the split sentence is the thing removed, not
-    the one span that happens to match. The guard against removing too much
-    is content, not size: a wrapper holding a heading, an article paragraph
-    or a nav table alongside the boilerplate line is never pure, so the walk
-    outward stops there and only the boilerplate line itself goes.
+    the one span that happens to match.
+
+    Two independent guards keep that from eating content:
+
+    * **Size.** Up to `_BOILERPLATE_MAX_CHARS` a single matching phrase is
+      enough. Beyond it the block must read as a *footer* rather than as
+      prose quoting one — that means at least two DISTINCT patterns firing
+      (the measured subscriber-details footer matches three) — and it may
+      never exceed `_BOILERPLATE_BLOCK_MAX_CHARS`. Without the
+      distinct-pattern requirement, a 300-600 char article paragraph that
+      merely quotes a footer line would be deleted whole, and wrapping it in
+      any block element would defeat a naive per-child check.
+    * **Content.** Every content-bearing descendant must be boilerplate too,
+      so a wrapper holding a heading, an article paragraph or a nav table
+      alongside the boilerplate line is never pure: the walk outward stops
+      there and only the boilerplate line itself goes.
     """
     text = _normalized_text(tag)
     if not _matches_boilerplate(text):
         return False
-    if len(text) >= _BOILERPLATE_BLOCK_MAX_CHARS:
-        return False
+    if len(text) >= _BOILERPLATE_MAX_CHARS:
+        if len(text) >= _BOILERPLATE_BLOCK_MAX_CHARS:
+            return False
+        if _distinct_boilerplate_hits(text) < 2:
+            return False
     inner = [c for c in tag.find_all(_CONTENT_TAGS) if _normalized_text(c)]
-    if not inner:
-        # One inline run with nothing structured to corroborate it: only the
-        # single-line cap applies.
-        return len(text) < _BOILERPLATE_MAX_CHARS
     return all(_matches_boilerplate(_normalized_text(c)) for c in inner)
 
 

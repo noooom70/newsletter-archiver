@@ -31,6 +31,14 @@ whitespace-word vs ~1.3 for prose) and pollutes retrieval.
 - Approach: **generic heuristic pipeline** (publication-agnostic). No
   per-publication config schema, no readability-style library. Per-publication
   hints in `publications.yaml` remain a future escape hatch only.
+- **Accepted loss: Economist link destinations.** The Economist routes every
+  link through `click.e.economist.com/u/?qs=<token>`, where the `qs` token
+  *is* the destination — stripping it (it is a tracking param, and it is not
+  in `KEEP_PARAMS`) collapses those links to non-resolving stubs like
+  `https://click.e.economist.com/u/` in the markdown. Decided with the user
+  on 2026-08-09 to ship as-is: the markdown is the retrieval copy and exists
+  to be searched, the anchor text carrying the meaning is preserved, and the
+  stored `.html` reading copy still carries the real, working links.
 
 ## Evidence base (measured on the real corpus; see handoff of 2026-08-09)
 
