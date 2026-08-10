@@ -1,10 +1,15 @@
 """Tests for HTML cleanup, Markdown conversion, and newsletter detection."""
 
+from bs4 import BeautifulSoup
+
 from newsletter_archiver.fetcher.content_extractor import (
+    _distinct_boilerplate_hits,
+    _normalized_text,
     build_markdown_document,
     calculate_reading_time,
     calculate_word_count,
     clean_html,
+    extract_markdown,
     html_to_markdown,
 )
 from newsletter_archiver.fetcher.email_parser import _is_transactional_subject
@@ -84,3 +89,229 @@ def test_transactional_subject_detection():
     assert not _is_transactional_subject("The Disappearance of Nancy Guthrie")
     assert not _is_transactional_subject("Longreads + Open Thread")
     assert not _is_transactional_subject("The World in Brief: Rubio love-bombs Europe")
+
+
+def test_clean_html_removes_extended_chrome_links():
+    html = """
+    <div><p>Real article text that should definitely survive this pass.</p>
+    <td><a href="https://e.example/privacy">Privacy Policy</a></td>
+    <td><a href="https://e.example/terms">Terms &amp; Conditions</a></td>
+    <p><a href="https://e.example/contact">Contact us</a></p>
+    <p><a href="https://e.example/fwd">Forward to a friend</a></p></div>
+    """
+    cleaned = clean_html(html)
+    assert "Privacy Policy" not in cleaned
+    assert "Terms" not in cleaned
+    assert "Contact us" not in cleaned
+    assert "Forward to a friend" not in cleaned
+    assert "Real article text" in cleaned
+
+
+def test_clean_html_removes_boilerplate_lines():
+    html = """
+    <div><p>Keep this paragraph of genuine newsletter content.</p>
+    <p>This email was sent to: reader@example.com</p>
+    <td>This email has been sent to reader@example.com because you signed up
+    for this newsletter.</td>
+    <p>Registered in England and Wales. No. 236383. The Adelphi, 1-11 John
+    Adam Street, London, WC2N 6HT</p>
+    <p>Copyright © The Publisher Ltd 2026. All rights reserved.</p></div>
+    """
+    cleaned = clean_html(html)
+    assert "reader@example.com" not in cleaned
+    assert "Registered in England" not in cleaned
+    assert "All rights reserved" not in cleaned
+    assert "genuine newsletter content" in cleaned
+
+
+def test_boilerplate_split_across_spans_removes_owner_address():
+    # Real Economist footer shape: the sentence is split across inline spans
+    # with the address in an anchor of its own. Matching the innermost span
+    # and stopping there would leave the address behind.
+    html = """
+    <td><h1>Article Title</h1>
+    <p>A real paragraph of article content that has to survive the pass.</p>
+    <td><p><span>This email has been sent to </span><a title="reader@example.com"
+    ><span>reader@example.com </span></a><span>because you signed up for this
+    newsletter or because it is included in your subscription. </span></p></td>
+    </td>
+    """
+    cleaned = clean_html(html)
+    assert "reader@example.com" not in cleaned
+    assert "because you signed up" not in cleaned
+    assert "Article Title" in cleaned
+    assert "real paragraph of article content" in cleaned
+
+
+def test_boilerplate_matches_across_embedded_newline():
+    html = "<p>Copyright © The Publisher Ltd 2026.\nAll rights reserved.</p>"
+    assert "All rights reserved" not in clean_html(html)
+
+
+def test_chrome_matches_across_embedded_newline():
+    html = "<div><p>Genuine article body worth keeping.</p><p><a href='#'>Manage\nyour preferences</a></p></div>"
+    cleaned = clean_html(html)
+    assert "preferences" not in cleaned
+    assert "Genuine article body" in cleaned
+
+
+def test_subscriber_details_footer_removed():
+    # Stratechery's subscriber-details footer, reduced but structurally
+    # faithful (nested table in a wrapper td). Synthetic name and address —
+    # the repo is public.
+    html = """
+    <td><h2>The Article</h2><p>Article body that must survive this pass.</p></td>
+    <td><table><tbody><tr><td>
+    <span>Subscription Information<br><br></span>
+    <span>Member: Reader Name<br>
+    Email: <a href="mailto:reader@example.com">reader@example.com</a><br>
+    Member since: February 15, 2023<br>Your subscription renews every month<br>
+    Renewal date: February 15, 2026<br><br>You are receiving this email because
+    you are subscribed to <a href="https://pub.example/">Publication</a>.
+    <a href="https://pub.example/account">Click here</a> to view your account
+    and manage your subscriptions. <a href="https://pub.example/u">Click here</a>
+    to unsubscribe.</span></td></tr></tbody></table></td>
+    """
+    # Why it dies despite exceeding the single-phrase cap: it is in the
+    # footer-headroom band AND several distinct patterns fire at once.
+    footer = BeautifulSoup(html, "html.parser").find_all("td")[-1]
+    text = _normalized_text(footer)
+    assert 300 <= len(text) < 600, f"footer must sit in the headroom band ({len(text)})"
+    assert _distinct_boilerplate_hits(text) >= 2
+
+    cleaned = clean_html(html)
+    assert "Subscription Information" not in cleaned
+    assert "reader@example.com" not in cleaned
+    assert "Member since" not in cleaned
+    assert "Renewal date" not in cleaned
+    assert "The Article" in cleaned
+    assert "Article body that must survive" in cleaned
+
+
+def test_long_prose_quoting_one_boilerplate_phrase_survives():
+    # 300-600 chars is footer headroom, and it is granted only to blocks
+    # matching two or more DISTINCT patterns. Article prose quoting a single
+    # footer phrase must survive — including when a block wrapper would
+    # otherwise satisfy a naive "every child is boilerplate" check.
+    prose = (
+        "The phishing campaign impersonated the publisher's own mailing-list "
+        "footer, which is exactly why the security desk flagged it so quickly: "
+        "readers have been trained for years to trust anything that looks like "
+        "a list notice, and this one looked the part. The notice reads \"this "
+        "email was sent to\" your address, followed by a link that goes nowhere "
+        "near the publisher's own domain."
+    )
+    assert 300 <= len(prose) < 600, f"probe must sit in the headroom band ({len(prose)})"
+    for html in (f"<p>{prose}</p>", f"<div><p>{prose}</p></div>"):
+        cleaned = clean_html(html)
+        assert "phishing campaign" in cleaned
+        assert "goes nowhere near the publisher" in cleaned
+
+
+def test_clean_html_keeps_large_blocks_mentioning_terms():
+    # A long paragraph that merely links to something matching a chrome
+    # pattern must not be decomposed wholesale.
+    long_text = "word " * 60
+    html = f'<p>{long_text}<a href="https://x.example/p">Privacy Policy</a></p>'
+    cleaned = clean_html(html)
+    assert "word word" in cleaned
+    assert "Privacy Policy" not in cleaned  # anchor itself still removed
+
+
+def test_alt_text_preserved_when_meaningful():
+    html = (
+        '<p><img src="https://cdn.example/chart.png" '
+        'alt="Chart showing quarterly revenue growth by region"></p>'
+    )
+    md = html_to_markdown(html)
+    assert "Chart showing quarterly revenue growth by region" in md
+
+
+def test_alt_text_dropped_when_boilerplate_or_short():
+    html = (
+        '<p><img src="https://cdn.example/a.png" alt="logo">'
+        '<img src="https://cdn.example/b.png" alt="photo of thing.jpg">'
+        '<img src="https://cdn.example/c.png" alt="https://cdn.example/c.png">'
+        '<img src="https://cdn.example/d.png" alt="two words">'
+        '<img src="https://cdn.example/e.png"></p>'
+    )
+    md = html_to_markdown(html)
+    assert "logo" not in md
+    assert "thing.jpg" not in md
+    assert "cdn.example" not in md
+    assert "two words" not in md
+
+
+def test_layout_tables_flattened_no_pipe_rows():
+    html = """
+    <table role="presentation"><tbody><tr><td>
+      <table><tr><td><p>The article paragraph lives deep in nested layout
+      tables and must come out as clean prose.</p></td></tr></table>
+    </td></tr>
+    <tr><td></td><td></td><td></td></tr></tbody></table>
+    """
+    md = html_to_markdown(html)
+    assert "| --- |" not in md
+    assert "|  |" not in md
+    assert "must come out as clean prose" in md
+
+
+def test_data_table_with_th_survives_as_markdown_table():
+    html = """
+    <table><tr><th>Metric</th><th>Value</th></tr>
+    <tr><td>Revenue</td><td>$10M</td></tr>
+    <tr><td>Growth</td><td>12%</td></tr></table>
+    """
+    md = html_to_markdown(html)
+    assert "| Metric | Value |" in md
+    assert "| Revenue | $10M |" in md
+
+
+def test_data_table_grid_of_short_cells_survives():
+    html = """
+    <table><tr><td>2024</td><td>2025</td></tr>
+    <tr><td>1.2</td><td>3.4</td></tr></table>
+    """
+    md = html_to_markdown(html)
+    assert "| 2024 | 2025 |" in md
+
+
+def test_table_with_block_content_is_layout():
+    html = """
+    <table><tr><td><p>A long-form paragraph clearly not tabular data,
+    holding the actual article body.</p></td><td><p>Second column of
+    prose.</p></td></tr>
+    <tr><td><p>x</p></td><td><p>y</p></td></tr></table>
+    """
+    md = html_to_markdown(html)
+    assert "| --- |" not in md
+    assert "actual article body" in md
+
+
+def test_extract_markdown_full_pipeline():
+    html = """
+    <html><body><table role="presentation"><tr><td>
+    <h1>Article Title</h1>
+    <p>Body text with a
+    <a href="https://na01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fpub.example%2Fpost%3Fqs%3DTRACK">link</a>.</p>
+    <p><a href="#">Unsubscribe</a></p>
+    <p>This email was sent to: reader@example.com</p>
+    </td></tr></table></body></html>
+    """
+    result = extract_markdown(html)
+    assert "safelinks" not in result.markdown
+    assert "https://pub.example/post" in result.markdown
+    assert "Unsubscribe" not in result.markdown
+    assert "reader@example.com" not in result.markdown
+    assert "Article Title" in result.markdown
+    assert "| --- |" not in result.markdown
+    assert result.unwrap_failures == 0
+
+
+def test_extract_markdown_counts_failures():
+    html = '<a href="https://na01.safelinks.protection.outlook.com/?data=x">y</a>'
+    assert extract_markdown(html).unwrap_failures == 1
+
+
+def test_html_to_markdown_still_returns_str(sample_html):
+    assert isinstance(html_to_markdown(sample_html), str)

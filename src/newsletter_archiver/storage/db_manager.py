@@ -271,6 +271,28 @@ class DatabaseManager:
                 select(Newsletter).where(Newsletter.id == newsletter_id)
             ).scalar_one_or_none()
 
+    def update_newsletter_metrics(
+        self, markdown_path: str, word_count: int, reading_time_minutes: float
+    ) -> bool:
+        """Refresh word count metrics for all rows owning markdown_path.
+
+        Multiple rows can share a markdown_path: a publisher double-send
+        (distinct message_id/internet_message_id, both correctly passing
+        dedup) archived to the same file. All matching rows are updated.
+
+        Update-only: returns False (and writes nothing) when no row matches.
+        """
+        with self._session() as session:
+            newsletters = session.execute(
+                select(Newsletter).where(Newsletter.markdown_path == markdown_path)
+            ).scalars().all()
+            if not newsletters:
+                return False
+            for newsletter in newsletters:
+                newsletter.word_count = word_count
+                newsletter.reading_time_minutes = reading_time_minutes
+            return True
+
     # --- Pending email operations ---
 
     def save_pending_email(
